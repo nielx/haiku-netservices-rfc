@@ -2,6 +2,9 @@
 #include <cstdint>
 
 #include <SupportDefs.h>
+#include <Url.h>
+#include <UrlProtocolRoster.h>
+#include <UrlRequest.h>
 
 #include <Expected.h>
 
@@ -24,8 +27,17 @@ void test_expected() {
 	assert(exception_thrown);
 }
 
+void test_unknown_protocol() {
+	auto url = BUrl("httpx://unknown.protocol.com/");
+	assert(url.IsValid());
+	auto request = BPrivate::Network::BUrlProtocolRoster::MakeRequest(url);
+	assert(!request.has_value());
+	assert(request.error() == B_NOT_SUPPORTED);
+}
+
 int
 main(int argc, char** argv) {
 	test_expected();
+	test_unknown_protocol();
 	return 0;
 }

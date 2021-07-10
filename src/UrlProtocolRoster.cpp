@@ -10,13 +10,14 @@
 
 #include <stdexcept>
 
+#include <SupportDefs.h>
 #include <UrlProtocolRoster.h>
 #include <UrlRequest.h>
 
 using namespace BPrivate::Network;
 
 
-std::unique_ptr<BUrlRequest>
+Expected<std::unique_ptr<BUrlRequest>, status_t>
 BUrlProtocolRoster::MakeRequest(const BUrl& url)
 {
 	if (url.Protocol() == "http") {
@@ -24,5 +25,5 @@ BUrlProtocolRoster::MakeRequest(const BUrl& url)
 	} else if (url.Protocol() == "https") {
 		return std::make_unique<BUrlRequest>(url);
 	}
-	throw std::invalid_argument("Protocol not supported");
+	return Unexpected<status_t>(B_NOT_SUPPORTED);
 }

@@ -9,6 +9,8 @@
 
 #include <memory>
 
+#include <Expected.h>
+
 
 class BDataIO;
 class BUrl;
@@ -23,7 +25,8 @@ class BUrlRequest;
 
 class BUrlProtocolRoster {
 public:
-	static	std::unique_ptr<BUrlRequest>	MakeRequest(const BUrl& url);
+	static Expected<std::unique_ptr<BUrlRequest>, status_t>
+		MakeRequest(const BUrl& url);
 };
 
 } // namespace Network
