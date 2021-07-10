@@ -19,32 +19,40 @@ class Expected {
 	bool fOk = true;
 public:
 	// Constructors
-	Expected() : fResult(T()) { }
-	Expected(const T& other) : fResult(T(other)) { }
-	Expected(T&& other) : fResult(std::move(other)) { }
+	Expected() {
+		new(&fResult) T();
+	}
+
+	Expected(const T& other) {
+		new(&fResult) T(other);
+	}
+
+	Expected(T&& other) {
+		new(&fResult) T(std::move(other));
+	}
 
 	Expected(const Expected<T, E>& other) {
 		fOk = other.fOk;
 		if (fOk)
-			fResult = T(other.fResult);
+			new(&fResult) T(other.fResult);
 		else
-			fError = E(other.fError);
+			new(&fError) E(other.fError);
 	}
 
 	Expected(Expected<T, E>&& other) {
-		fOk = std::move(fOk);
+		fOk = std::move(other.fOk);
 		if (fOk)
-			fResult = T(std::move(other.fResult));
+			new(&fResult) T(std::move(other.fResult));
 		else
-			fError = E(std::move(other.fError));
+			new(&fError) E(std::move(other.fError));
 	}
 
 	Expected(const Unexpected<E>& other) : fOk(false) {
-		fError = E(other.value());
+		new(&fError) E(other.value());
 	}
 
 	Expected(Unexpected<E>&& other) : fOk(false) {
-		fError = E(std::move(other.value()));
+		new(&fError) E(std::move(other.value()));
 	}
 
 	// Destructor
@@ -106,12 +114,12 @@ public:
 
 	const E&& error() const&& {
 		if (fOk) throw new std::runtime_error("Expected object does not have an error");
-		return std::move(fError);
+		return fError;
 	}	
 
 	E&& error() && {
 		if (fOk) throw new std::runtime_error("Expected object does not have an error");
-		return std::move(fError);
+		return fError;
 	}
 };
 
