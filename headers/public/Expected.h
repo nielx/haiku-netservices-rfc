@@ -10,6 +10,38 @@
 
 // Based on the std::expected proposal as detailed in P0323R10.
 
+template<typename E>
+class bad_expected_access;
+
+
+template<>
+class bad_expected_access<void> : public std::exception {
+public:
+	bad_expected_access() : std::exception() {}
+};
+
+
+template<typename E>
+class bad_expected_access : public bad_expected_access<void> {
+	E fError;
+
+public:
+	bad_expected_access(E error) : fError(error) { }
+
+	virtual char const *what() const noexcept override {
+		return "bad_expected_access";
+	}
+
+	E& error() & { return fError; }
+
+	E const& error() const& { return fError;}
+
+	E&& error() && { return std::move(fError); }
+
+	E const&& error() const&& { return std::move(fError); }
+}; 
+
+
 template<typename E> class Unexpected;
 
 
@@ -66,22 +98,22 @@ public:
 	// Observers (todo: move methods)
 	const T* operator->() const {
 		if (fOk) return std::addressof(fResult);
-		throw fError;	
+		throw bad_expected_access<E>(fError);	
 	}
 	
 	T* operator->() {
 		if (fOk) return std::addressof(fResult);
-		throw fError;
+		throw bad_expected_access<E>(fError);
 	}
 
 	const T& operator*() const& {
 		if (fOk) return fResult;
-		throw fError;
+		throw bad_expected_access<E>(fError);
 	}
 
 	T& operator*() & {
 		if (fOk) return fResult;
-		throw fError;
+		throw bad_expected_access<E>(fError);
 	}
 
 	explicit operator bool() const noexcept {
@@ -94,12 +126,12 @@ public:
 	
 	const T& value() const& {
 		if (fOk) return fResult;
-		throw fError;
+		throw bad_expected_access<E>(fError);
 	}
 
 	T& value() & {
 		if (fOk) return fResult;
-		throw fError;
+		throw bad_expected_access<E>(fError);
 	}
 
 	const E& error() const& {
@@ -114,12 +146,12 @@ public:
 
 	const E&& error() const&& {
 		if (fOk) throw new std::runtime_error("Expected object does not have an error");
-		return fError;
+		return std::move(fError);
 	}	
 
 	E&& error() && {
 		if (fOk) throw new std::runtime_error("Expected object does not have an error");
-		return fError;
+		return std::move(fError);
 	}
 };
 
@@ -129,7 +161,7 @@ class Unexpected {
 
 public:
 	Unexpected() = delete;
-	
+
 	explicit Unexpected(const E& e) : fError(e) { }
 	explicit Unexpected(E &&e) : fError(std::move(e)) { }
 

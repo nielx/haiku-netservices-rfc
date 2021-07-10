@@ -21,7 +21,7 @@ void test_expected() {
 	auto exception_thrown = false;
 	try {
 		auto x = failed.value();
-	} catch (status_t &e) {
+	} catch (bad_expected_access<status_t> &e) {
 		exception_thrown = true;
 	}
 	assert(exception_thrown);
