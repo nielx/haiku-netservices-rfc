@@ -20,7 +20,6 @@ class BUrlRequest {
 public:
 	BUrlRequest(const BUrl &url) {};
 	virtual ~BUrlRequest() {};
-
 };
 
 

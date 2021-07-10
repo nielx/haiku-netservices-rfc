@@ -8,6 +8,9 @@
 
 #include <Expected.h>
 
+using BPrivate::Network::BUrlProtocolRoster;
+using BPrivate::Network::BUrlRequest;
+
 
 void test_expected() {
 	Expected<std::int8_t, status_t> result(14);
@@ -27,10 +30,13 @@ void test_expected() {
 	assert(exception_thrown);
 }
 
+
+// Test whether we are correctly getting a B_NOT_SUPPORTED error when calling
+// BUrlProtocolRoster::MakeRequest<...>(...) with an unsupported protocol.
 void test_unknown_protocol() {
 	auto url = BUrl("httpx://unknown.protocol.com/");
 	assert(url.IsValid());
-	auto request = BPrivate::Network::BUrlProtocolRoster::MakeRequest(url);
+	auto request = BUrlProtocolRoster::MakeRequest<BUrlRequest>(url);
 	assert(!request.has_value());
 	assert(request.error().Code() == B_NOT_SUPPORTED);
 }
