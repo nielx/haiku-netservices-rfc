@@ -8,8 +8,10 @@
 
 
 #include <memory>
+#include <stdexcept>
 
 #include <Expected.h>
+#include <ErrorsExt.h>
 
 
 class BDataIO;
@@ -25,7 +27,7 @@ class BUrlRequest;
 
 class BUrlProtocolRoster {
 public:
-	static Expected<std::unique_ptr<BUrlRequest>, status_t>
+	static Expected<std::unique_ptr<BUrlRequest>, BError>
 		MakeRequest(const BUrl& url);
 };
 

@@ -8,16 +8,14 @@
  *		Niels Sascha Reedijk, niels.reedijk@gmail.com
  */
 
-#include <stdexcept>
-
 #include <SupportDefs.h>
 #include <UrlProtocolRoster.h>
 #include <UrlRequest.h>
 
 using namespace BPrivate::Network;
+using BPrivate::BError;
 
-
-Expected<std::unique_ptr<BUrlRequest>, status_t>
+Expected<std::unique_ptr<BUrlRequest>, BError>
 BUrlProtocolRoster::MakeRequest(const BUrl& url)
 {
 	if (url.Protocol() == "http") {
@@ -25,5 +23,5 @@ BUrlProtocolRoster::MakeRequest(const BUrl& url)
 	} else if (url.Protocol() == "https") {
 		return std::make_unique<BUrlRequest>(url);
 	}
-	return Unexpected<status_t>(B_NOT_SUPPORTED);
+	return Unexpected<BError>(BError(B_NOT_SUPPORTED, "Protocol not supported"));
 }

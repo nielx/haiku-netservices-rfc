@@ -32,7 +32,7 @@ void test_unknown_protocol() {
 	assert(url.IsValid());
 	auto request = BPrivate::Network::BUrlProtocolRoster::MakeRequest(url);
 	assert(!request.has_value());
-	assert(request.error() == B_NOT_SUPPORTED);
+	assert(request.error().Code() == B_NOT_SUPPORTED);
 }
 
 int
