@@ -18,8 +18,14 @@ class BUrlProtocolRoster;
 
 class BUrlRequest {
 public:
-	BUrlRequest(const BUrl &url) {};
-	virtual ~BUrlRequest() {};
+	virtual ~BUrlRequest();
+
+protected:
+	friend class BUrlProtocolRoster;
+	BUrlRequest(const BUrl &url);
+
+private:
+	BUrl	fUrl;
 };
 
 
