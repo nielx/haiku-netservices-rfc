@@ -8,6 +8,7 @@
  *		Niels Sascha Reedijk, niels.reedijk@gmail.com
  */
 
+#include <HttpRequest.h>
 #include <SupportDefs.h>
 #include <UrlProtocolRoster.h>
 #include <UrlRequest.h>
@@ -20,9 +21,9 @@ BUrlRequest*
 BUrlProtocolRoster::_MakeRequest(const BUrl& url)
 {
 	if (url.Protocol() == "http") {
-		return new BUrlRequest(url);
+		return new BHttpRequest(url, false);
 	} else if (url.Protocol() == "https") {
-		return new BUrlRequest(url);
+		return new BHttpRequest(url, true);
 	}
 	return nullptr;
 }

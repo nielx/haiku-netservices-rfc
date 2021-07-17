@@ -5,4 +5,4 @@ project(HaikuNetservicesRfc)
 add_subdirectory(src)
 
 add_executable(Tests test/main.cpp)
-target_link_libraries(Tests PUBLIC -lbe netservices_rfc)
+target_link_libraries(Tests PUBLIC -lbe -lbnetapi netservices_rfc)
