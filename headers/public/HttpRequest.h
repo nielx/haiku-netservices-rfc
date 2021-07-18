@@ -5,12 +5,43 @@
 #ifndef _B_URL_PROTOCOL_HTTP_H_
 #define _B_URL_PROTOCOL_HTTP_H_
 
+#include <Expected.h>
+#include <ErrorsExt.h>
 #include <NetworkRequest.h>
 
 
 namespace BPrivate {
 
 namespace Network {
+
+
+// Request method
+class BHttpMethod {
+public:
+	// Some standard methods
+	static	BHttpMethod			Get();
+	static	BHttpMethod			Post();
+	static	BHttpMethod			Put();
+	static	BHttpMethod			Head();
+	static	BHttpMethod			Delete();
+	static	BHttpMethod			Options();
+	static	BHttpMethod			Trace();
+	static	BHttpMethod			Connect();
+
+	// Custom methods
+	static	Expected<BHttpMethod, BError>
+								Make(std::string method);
+
+
+	// Constructors and assignment
+								BHttpMethod(const BHttpMethod& other) = default;
+								BHttpMethod(BHttpMethod&& other) = default;
+			BHttpMethod&		operator=(const BHttpMethod& other) = default;
+			BHttpMethod&		operator=(BHttpMethod&& other) = default;
+private:
+								BHttpMethod(std::string method);
+			std::string			fMethod;
+};
 
 
 class BHttpRequest : public BNetworkRequest {
@@ -23,22 +54,11 @@ private:
 									bool ssl = false);
 
 			bool				fSSL;
-			std::string			fRequestMethod;
+			BHttpMethod			fRequestMethod;
 };
 
+} // namespace Network
 
-// Request method
-const char* const B_HTTP_GET = "GET";
-const char* const B_HTTP_POST = "POST";
-const char* const B_HTTP_PUT = "PUT";
-const char* const B_HTTP_HEAD = "HEAD";
-const char* const B_HTTP_DELETE = "DELETE";
-const char* const B_HTTP_OPTIONS = "OPTIONS";
-const char* const B_HTTP_TRACE = "TRACE";
-const char* const B_HTTP_CONNECT = "CONNECT";
-
-}
-
-}
+} // namespace BPrivate
 
 #endif
