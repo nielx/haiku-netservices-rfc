@@ -12,6 +12,7 @@
 
 #include <Expected.h>
 #include <ErrorsExt.h>
+#include <UrlResult.h>
 
 
 class BDataIO;
@@ -24,12 +25,13 @@ namespace Network {
 class BUrlContext;
 class BUrlProtocolListener;
 class BUrlRequest;
+class BUrlResult;
 
 class BUrlProtocolRoster {
 public:
 
 	template<class U>
-	static Expected<std::unique_ptr<U>, BError>
+	static	Expected<std::unique_ptr<U>, BError>
 		MakeRequest(const BUrl& url)
 	{
 		static_assert(std::is_base_of<BUrlRequest, U>::value, "It is only possible to retrieve a subclass of BUrlRequest");
@@ -44,6 +46,10 @@ public:
 		}
 		return std::unique_ptr<U>(request);
 	}
+
+	// Synchronously running requests
+	static	Expected<BUrlResult, BError>
+						RunRequest(std::unique_ptr<BUrlRequest> request);
 
 private:
 	static BUrlRequest* _MakeRequest(const BUrl& url);

@@ -17,6 +17,13 @@ using namespace BPrivate::Network;
 using BPrivate::BError;
 
 
+Expected<BUrlResult, BError>
+BUrlProtocolRoster::RunRequest(std::unique_ptr<BUrlRequest> request) {
+	//TODO
+	return Unexpected<BError>(BError(B_NOT_SUPPORTED, "Not implemented"));
+}
+
+
 BUrlRequest*
 BUrlProtocolRoster::_MakeRequest(const BUrl& url)
 {
@@ -27,3 +34,5 @@ BUrlProtocolRoster::_MakeRequest(const BUrl& url)
 	}
 	return nullptr;
 }
+
+

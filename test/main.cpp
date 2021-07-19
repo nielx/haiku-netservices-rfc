@@ -60,10 +60,23 @@ void test_request_type() {
 }
 
 
+// Test synchronous fetching of haiku-os.org
+void test_haiku_os() {
+	auto url = BUrl("https://www.haiku-os.org/");
+	assert(url.IsValid());
+	auto request =
+		BUrlProtocolRoster::MakeRequest<BHttpRequest>(url);
+	assert(request.has_value());
+	auto result = BUrlProtocolRoster::RunRequest(std::move(request.value()));
+	assert(!result && result.error().Code() == B_NOT_SUPPORTED);
+}
+
+
 int
 main(int argc, char** argv) {
 	test_expected();
 	test_unknown_protocol();
 	test_request_type();
+	test_haiku_os();
 	return 0;
 }
