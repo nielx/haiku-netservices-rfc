@@ -72,7 +72,7 @@ BNetworkRequest::_ProtocolSetup()
 	action.sa_handler = empty;
 	action.sa_mask = 0;
 	action.sa_flags = 0;
-	sigaction(SIGUSR1, &action, NULL);
+	sigaction(SIGUSR1, &action, nullptr);
 }
 
 

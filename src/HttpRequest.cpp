@@ -30,6 +30,13 @@ BHttpRequest::~BHttpRequest()
 }
 
 
+status_t
+BHttpRequest::_ProtocolLoop()
+{
+	return B_OK;
+}
+
+
 // BHttpMethod
 BHttpMethod::BHttpMethod(std::string method)
 	: fMethod(method)

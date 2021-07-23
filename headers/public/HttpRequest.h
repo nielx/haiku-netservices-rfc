@@ -48,6 +48,9 @@ class BHttpRequest : public BNetworkRequest {
 public:
 	virtual						~BHttpRequest();
 
+protected:
+			status_t			_ProtocolLoop();
+
 private:
 			friend 				class BUrlProtocolRoster;
 								BHttpRequest(const BUrl& url,

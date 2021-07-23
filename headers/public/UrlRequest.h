@@ -18,10 +18,14 @@ class BUrlProtocolRoster;
 
 class BUrlRequest {
 public:
-	virtual ~BUrlRequest();
+	virtual							~BUrlRequest();
 
 protected:
-	friend class BUrlProtocolRoster;
+	friend 	class BUrlProtocolRoster;
+	virtual	void					_ProtocolSetup() { };
+	virtual status_t				_ProtocolLoop() = 0;
+
+protected:
 	BUrlRequest(const BUrl &url);
 
 private:
