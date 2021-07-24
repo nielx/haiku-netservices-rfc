@@ -10,6 +10,9 @@
  */
 
 
+#include <HttpAuthentication.h>
+#include <HttpForm.h>
+#include <HttpHeaders.h>
 #include <HttpRequest.h>
 
 
@@ -18,15 +21,49 @@ using namespace BPrivate::Network;
 
 
 BHttpRequest::BHttpRequest(const BUrl& url, bool ssl)
-	: BNetworkRequest(url), fSSL(ssl), fRequestMethod(BHttpMethod::Get())
+	: BNetworkRequest(url),
+	fSSL(ssl),
+	fRequestMethod(BHttpMethod::Get()),
+	fHttpVersion(B_HTTP_11),
+	fRequestStatus(kRequestInitialState),
+	fOptHeaders(NULL),
+	fOptPostFields(NULL),
+	fOptInputData(NULL),
+	fOptInputDataSize(-1),
+	fOptRangeStart(-1),
+	fOptRangeEnd(-1),
+	fOptFollowLocation(true)
 {
-	
+	_ResetOptions();
 }
 
 
 BHttpRequest::~BHttpRequest()
 {
 
+}
+
+
+void
+BHttpRequest::_ResetOptions()
+{
+	delete fOptPostFields;
+	delete fOptHeaders;
+
+	fOptFollowLocation = true;
+	fOptMaxRedirs = 8;
+	fOptReferer = "";
+	fOptUserAgent = "Services Kit (Haiku)";
+	fOptUsername = "";
+	fOptPassword = "";
+	fOptAuthMethods = B_HTTP_AUTHENTICATION_BASIC | B_HTTP_AUTHENTICATION_DIGEST
+		| B_HTTP_AUTHENTICATION_IE_DIGEST;
+	fOptHeaders = NULL;
+	fOptPostFields = NULL;
+	fOptSetCookies = true;
+	fOptDiscardData = false;
+	fOptDisableListener = false;
+	fOptAutoReferer = true;
 }
 
 

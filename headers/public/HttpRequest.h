@@ -7,6 +7,7 @@
 
 #include <Expected.h>
 #include <ErrorsExt.h>
+#include <HttpHeaders.h>
 #include <NetworkRequest.h>
 
 
@@ -14,6 +15,7 @@ namespace BPrivate {
 
 namespace Network {
 
+class BHttpForm;
 
 // Request method
 class BHttpMethod {
@@ -49,6 +51,7 @@ public:
 	virtual						~BHttpRequest();
 
 protected:
+			void				_ResetOptions();
 			status_t			_ProtocolLoop();
 
 private:
@@ -58,6 +61,47 @@ private:
 
 			bool				fSSL;
 			BHttpMethod			fRequestMethod;
+			int8				fHttpVersion;
+
+			BHttpHeaders		fHeaders;
+	// Request status
+
+			//BHttpResult			fResult;
+
+			// Request state/events
+			enum {
+				kRequestInitialState,
+				kRequestStatusReceived,
+				kRequestHeadersReceived,
+				kRequestContentReceived,
+				kRequestTrailingHeadersReceived
+			}					fRequestStatus;
+
+	// Protocol options
+			uint8				fOptMaxRedirs;
+			BString				fOptReferer;
+			BString				fOptUserAgent;
+			BString				fOptUsername;
+			BString				fOptPassword;
+			uint32				fOptAuthMethods;
+			BHttpHeaders*		fOptHeaders;
+			BHttpForm*			fOptPostFields;
+			BDataIO*			fOptInputData;
+			ssize_t				fOptInputDataSize;
+			off_t				fOptRangeStart;
+			off_t				fOptRangeEnd;
+			bool				fOptSetCookies : 1;
+			bool				fOptFollowLocation : 1;
+			bool				fOptDiscardData : 1;
+			bool				fOptDisableListener : 1;
+			bool				fOptAutoReferer : 1;
+			bool				fOptStopOnError : 1;
+};
+
+// HTTP Version
+enum {
+	B_HTTP_10 = 1,
+	B_HTTP_11
 };
 
 } // namespace Network

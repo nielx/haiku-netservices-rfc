@@ -1,4 +1,5 @@
 add_library(netservices_rfc 
+	HttpAuthentication.cpp
 	HttpForm.cpp
 	HttpHeaders.cpp
 	HttpRequest.cpp
