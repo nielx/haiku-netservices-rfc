@@ -2,6 +2,7 @@ add_library(netservices_rfc
 	HttpAuthentication.cpp
 	HttpForm.cpp
 	HttpHeaders.cpp
+	HttpMethod.cpp
 	HttpRequest.cpp
 	HttpSession.cpp
 	NetworkRequest.cpp

@@ -5,6 +5,8 @@
 #ifndef _ERRORS_EXT_H
 #define _ERRORS_EXT_H
 
+#include <string>
+
 #include <SupportDefs.h>
 
 namespace BPrivate {

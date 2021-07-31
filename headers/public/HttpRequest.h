@@ -9,6 +9,7 @@
 #include <Expected.h>
 #include <ErrorsExt.h>
 #include <HttpHeaders.h>
+#include <HttpMethod.h>
 #include <NetworkRequest.h>
 
 
@@ -20,34 +21,6 @@ class CheckedProxySecureSocket;
 namespace Network {
 
 class BHttpForm;
-
-// Request method
-class BHttpMethod {
-public:
-	// Some standard methods
-	static	BHttpMethod			Get();
-	static	BHttpMethod			Post();
-	static	BHttpMethod			Put();
-	static	BHttpMethod			Head();
-	static	BHttpMethod			Delete();
-	static	BHttpMethod			Options();
-	static	BHttpMethod			Trace();
-	static	BHttpMethod			Connect();
-
-	// Custom methods
-	static	Expected<BHttpMethod, BError>
-								Make(std::string method);
-
-
-	// Constructors and assignment
-								BHttpMethod(const BHttpMethod& other) = default;
-								BHttpMethod(BHttpMethod&& other) = default;
-			BHttpMethod&		operator=(const BHttpMethod& other) = default;
-			BHttpMethod&		operator=(BHttpMethod&& other) = default;
-private:
-								BHttpMethod(std::string method);
-			std::string			fMethod;
-};
 
 
 class BHttpRequest : public BNetworkRequest {
