@@ -85,10 +85,10 @@ namespace BPrivate {
 };
 
 
-BHttpRequest::BHttpRequest(const BUrl& url, bool ssl)
+BHttpRequest::BHttpRequest(const BUrl& url, bool ssl, const BHttpMethod method)
 	: fUrl(url),
 	fSSL(ssl),
-	fRequestMethod(BHttpMethod::Get()),
+	fRequestMethod(method),
 	fHttpVersion(B_HTTP_11),
 	fRequestStatus(kRequestInitialState),
 	fOptHeaders(NULL),
@@ -106,6 +106,20 @@ BHttpRequest::BHttpRequest(const BUrl& url, bool ssl)
 BHttpRequest::~BHttpRequest()
 {
 
+}
+
+
+/*static*/ Expected<BHttpRequest, BError>
+BHttpRequest::Get(const BUrl& url)
+{
+	if (!url.IsValid())
+		return Unexpected<BError>(BError(B_BAD_VALUE, "Invalid URL"));
+
+	if (url.Protocol() == "http")
+		return BHttpRequest(url, false, BHttpMethod::Get());
+	else if (url.Protocol() == "https")
+		return BHttpRequest(url, true, BHttpMethod::Get());
+	return Unexpected<BError>(BError(B_BAD_VALUE, "Unsupported protocol"));
 }
 
 

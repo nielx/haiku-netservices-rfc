@@ -25,6 +25,9 @@ class BHttpForm;
 
 class BHttpRequest {
 public:
+	// Constructors
+	static	Expected<BHttpRequest, BError>	Get(const BUrl &url);
+
 	virtual						~BHttpRequest();
 
 	static	bool				IsInformationalStatusCode(int16 code);
@@ -39,9 +42,8 @@ protected:
 			status_t			_ProtocolLoop();
 
 private:
-			friend 				class BUrlProtocolRoster;
 								BHttpRequest(const BUrl& url,
-									bool ssl = false);
+									bool ssl, const BHttpMethod method);
 
 			status_t			_MakeRequest();
 

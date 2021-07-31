@@ -39,8 +39,8 @@ void test_expected() {
 void test_http_get_synchronous() {
 	auto url = BUrl("https://www.haiku-os.org/");
 	assert(url.IsValid());
-//	request = HttpRequest::Get(url);
-//	assert(request);
+	auto request = BHttpRequest::Get(url);
+	assert(request);
 }
 
 
