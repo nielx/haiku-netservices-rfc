@@ -20,3 +20,20 @@ BUrlRequest::BUrlRequest(const BUrl& url)
 BUrlRequest::~BUrlRequest()
 {
 }
+
+
+void
+BUrlRequest::_EmitDebug(BUrlProtocolDebugMessage type,
+	const char* format, ...)
+{
+//	if (fListener == NULL)
+		return;
+
+/*	va_list arguments;
+	va_start(arguments, format);
+
+	char debugMsg[1024];
+	vsnprintf(debugMsg, sizeof(debugMsg), format, arguments);
+	fListener->DebugMessage(this, type, debugMsg);
+	va_end(arguments);*/
+}

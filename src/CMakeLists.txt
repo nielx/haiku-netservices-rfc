@@ -3,6 +3,7 @@ add_library(netservices_rfc
 	HttpForm.cpp
 	HttpHeaders.cpp
 	HttpRequest.cpp
+	HttpSession.cpp
 	NetworkRequest.cpp
 	UrlProtocolRoster.cpp
 	UrlRequest.cpp

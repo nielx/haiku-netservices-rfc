@@ -16,6 +16,16 @@ namespace Network {
 class BUrlProtocolRoster;
 
 
+enum BUrlProtocolDebugMessage {
+	B_URL_PROTOCOL_DEBUG_TEXT,
+	B_URL_PROTOCOL_DEBUG_ERROR,
+	B_URL_PROTOCOL_DEBUG_HEADER_IN,
+	B_URL_PROTOCOL_DEBUG_HEADER_OUT,
+	B_URL_PROTOCOL_DEBUG_TRANSFER_IN,
+	B_URL_PROTOCOL_DEBUG_TRANSFER_OUT
+};
+
+
 class BUrlRequest {
 public:
 	virtual							~BUrlRequest();
@@ -24,12 +34,13 @@ protected:
 	friend 	class BUrlProtocolRoster;
 	virtual	void					_ProtocolSetup() { };
 	virtual status_t				_ProtocolLoop() = 0;
+	virtual void					_EmitDebug(BUrlProtocolDebugMessage type,
+										const char* format, ...);
 
 protected:
-	BUrlRequest(const BUrl &url);
+									BUrlRequest(const BUrl &url);
 
-private:
-	BUrl	fUrl;
+			BUrl					fUrl;
 };
 
 
