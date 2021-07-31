@@ -23,7 +23,7 @@ namespace Network {
 class BHttpForm;
 
 
-class BHttpRequest : public BNetworkRequest {
+class BHttpRequest {
 public:
 	virtual						~BHttpRequest();
 
@@ -52,6 +52,7 @@ private:
 									BCertificate& certificate,
 									const char* message);
 
+			BUrl				fUrl;
 			bool				fSSL;
 			BHttpMethod			fRequestMethod;
 			int8				fHttpVersion;

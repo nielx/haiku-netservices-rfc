@@ -8,7 +8,6 @@
  *		Niels Sascha Reedijk, niels.reedijk@gmail.com
  */
 
-#include <HttpRequest.h>
 #include <SupportDefs.h>
 #include <UrlProtocolRoster.h>
 #include <UrlRequest.h>
@@ -27,11 +26,6 @@ BUrlProtocolRoster::RunRequest(std::unique_ptr<BUrlRequest> request) {
 BUrlRequest*
 BUrlProtocolRoster::_MakeRequest(const BUrl& url)
 {
-	if (url.Protocol() == "http") {
-		return new BHttpRequest(url, false);
-	} else if (url.Protocol() == "https") {
-		return new BHttpRequest(url, true);
-	}
 	return nullptr;
 }
 

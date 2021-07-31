@@ -86,7 +86,7 @@ namespace BPrivate {
 
 
 BHttpRequest::BHttpRequest(const BUrl& url, bool ssl)
-	: BNetworkRequest(url),
+	: fUrl(url),
 	fSSL(ssl),
 	fRequestMethod(BHttpMethod::Get()),
 	fHttpVersion(B_HTTP_11),

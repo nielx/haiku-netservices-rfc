@@ -35,48 +35,18 @@ void test_expected() {
 }
 
 
-// Test whether we are correctly getting a B_NOT_SUPPORTED error when calling
-// BUrlProtocolRoster::MakeRequest<...>(...) with an unsupported protocol.
-void test_unknown_protocol() {
-	auto url = BUrl("httpx://unknown.protocol.com/");
-	assert(url.IsValid());
-	auto request = BUrlProtocolRoster::MakeRequest<BUrlRequest>(url);
-	assert(!request.has_value());
-	assert(request.error().Code() == B_NOT_SUPPORTED);
-}
-
-
-// Test whether we can effectively get a BNetworkRequest and a BHttpRequest
-// when passing in a HTTPS URL
-void test_request_type() {
-	auto url = BUrl("https://www.haiku-os.org/");
-	assert(url.IsValid());
-	auto networkRequest =
-		BUrlProtocolRoster::MakeRequest<BNetworkRequest>(url);
-	assert(networkRequest.has_value());
-	auto httpRequest =
-		BUrlProtocolRoster::MakeRequest<BHttpRequest>(url);
-	assert(httpRequest.has_value());
-}
-
-
 // Test synchronous fetching of haiku-os.org
-void test_haiku_os() {
+void test_http_get_synchronous() {
 	auto url = BUrl("https://www.haiku-os.org/");
 	assert(url.IsValid());
-	auto request =
-		BUrlProtocolRoster::MakeRequest<BHttpRequest>(url);
-	assert(request.has_value());
-	auto result = BUrlProtocolRoster::RunRequest(std::move(request.value()));
-	assert(!result && result.error().Code() == B_NOT_SUPPORTED);
+//	request = HttpRequest::Get(url);
+//	assert(request);
 }
 
 
 int
 main(int argc, char** argv) {
 	test_expected();
-	test_unknown_protocol();
-	test_request_type();
-	test_haiku_os();
+	test_http_get_synchronous();
 	return 0;
 }
