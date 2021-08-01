@@ -13,6 +13,7 @@
 #include <HttpResponse.h>
 #include <HttpSession.h>
 #include <Locker.h>
+#include <NetworkAddress.h>
 
 #include "AutoLocker.h"
 
@@ -46,6 +47,7 @@ struct BHttpSession::Wrapper {
 	std::promise<BHttpResponse>		promise;
 	// Data
 	BHttpResponse					response;
+	BNetworkAddress					remoteAddress;
 };
 
 
@@ -107,11 +109,17 @@ BHttpSession::ControlThreadFunc(void* arg)
 				case Wrapper::kRequestInitialState:
 				{
 					std::cout << "Processing new request" << std::endl;
-					// TODO
-					request.response.status_code = 0;
-					request.response.error = BError(B_ERROR, "Not implemented");
-					request.promise.set_value(std::move(request.response));
-					break;
+					if (_ResolveHostName(request)) {
+						// TODO
+						request.response.status_code = 5;
+						request.response.error = BError(B_ERROR, "Not implemented");
+						request.promise.set_value(std::move(request.response));
+						break;
+					} else {
+						// Resolving the hostname failed
+						request.promise.set_value(std::move(request.response));
+						break;
+					}
 				}
 				default:
 				{
@@ -145,4 +153,25 @@ BHttpSession::DataThreadFunc(void* arg)
 		release_sem(data->dataQueueSem);
 	}
 	return B_OK;
+}
+
+
+/*static*/ bool
+BHttpSession::_ResolveHostName(Wrapper& request)
+{
+	// This helper resolves the address for a given request
+	int port = request.request.fSSL ? 443 : 80;
+	if (request.request.fUrl.HasPort())
+		port = request.request.fUrl.Port();
+	
+	// TODO: proxy
+	request.remoteAddress.SetTo(request.request.fUrl.Host(), port);
+	if (auto status = request.remoteAddress.InitCheck(); status != B_OK) {
+		request.response.status_code = 0;
+		request.response.error = BError(B_SERVER_NOT_FOUND, "Cannot resolve hostname");\
+		return false;
+	}
+
+	// TODO: inform any listeners, though maybe that is not the job of this helper?
+	return true;
 }

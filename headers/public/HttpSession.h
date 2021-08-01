@@ -46,6 +46,9 @@ private:
 	std::shared_ptr<Data>		fData;
 	static	status_t			ControlThreadFunc(void* arg);
 	static	status_t			DataThreadFunc(void* arg);
+
+	// Helper Functions
+	static	bool				_ResolveHostName(Wrapper& request);
 };
 
 }

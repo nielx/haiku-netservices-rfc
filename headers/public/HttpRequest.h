@@ -54,6 +54,8 @@ private:
 									BCertificate& certificate,
 									const char* message);
 
+	// Request Data
+	friend	class				BHttpSession;
 			BUrl				fUrl;
 			bool				fSSL;
 			BHttpMethod			fRequestMethod;

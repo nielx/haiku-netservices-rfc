@@ -47,7 +47,7 @@ void test_http_get_synchronous() {
 	auto task = session.AddRequest(std::move(request.value()));
 	// get the response
 	auto response = task.get();
-	assert(response.status_code == 0);
+	assert(response.status_code == 5);
 }
 
 
