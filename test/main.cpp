@@ -2,7 +2,7 @@
 #include <cstdint>
 
 #include <HttpRequest.h>
-#include <NetworkRequest.h>
+#include <HttpSession.h>
 #include <SupportDefs.h>
 #include <Url.h>
 #include <UrlProtocolRoster.h>
@@ -11,7 +11,7 @@
 #include <Expected.h>
 
 using BPrivate::Network::BHttpRequest;
-using BPrivate::Network::BNetworkRequest;
+using BPrivate::Network::BHttpSession;
 using BPrivate::Network::BUrlProtocolRoster;
 using BPrivate::Network::BUrlRequest;
 
@@ -41,6 +41,10 @@ void test_http_get_synchronous() {
 	assert(url.IsValid());
 	auto request = BHttpRequest::Get(url);
 	assert(request);
+
+	auto session = BHttpSession();
+	session.AddRequest(std::move(request.value()));
+	snooze(10000000);
 }
 
 

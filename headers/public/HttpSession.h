@@ -13,6 +13,8 @@ namespace BPrivate {
 
 namespace Network {
 
+class BHttpRequest;
+
 
 class BHttpSession {
 public:
@@ -34,9 +36,15 @@ public:
 	void					GetProxyPort() { }
 	bool					HasCertificateException() { return false; }
 
+	// Requests
+	void					AddRequest(BHttpRequest request);
+
 private:
+	struct Wrapper;
 	struct Data;
 	std::shared_ptr<Data>	fData;
+	static	status_t		ControlThreadFunc(void* arg);
+	static	status_t		DataThreadFunc(void* arg);
 };
 
 }
