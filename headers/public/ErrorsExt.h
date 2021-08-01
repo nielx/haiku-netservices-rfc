@@ -14,6 +14,9 @@ namespace BPrivate {
 class BError
 {
 public:
+	BError()
+		: fStatus(B_ERROR), fMessage("General System Error") { }
+
 	BError(status_t status, const std::string& what)
 		: fStatus(status), fMessage(what) { }
 

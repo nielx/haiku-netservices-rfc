@@ -6,6 +6,7 @@
 #define _B_HTTP_SESSION_H_
 
 
+#include <future>
 #include <memory>
 
 
@@ -14,37 +15,37 @@ namespace BPrivate {
 namespace Network {
 
 class BHttpRequest;
-
+struct BHttpResponse;
 
 class BHttpSession {
 public:
 	// Constructor & Destructor
-							BHttpSession();
-							~BHttpSession() = default;
+								BHttpSession();
+								~BHttpSession() = default;
 
 	// Session modifiers
-	void					SetCookieJar() { }
-	void					AddAuthentication() { }
-	void					SetProxy() { }
-	void					AddCertificateException() { }
+	void						SetCookieJar() { }
+	void						AddAuthentication() { }
+	void						SetProxy() { }
+	void						AddCertificateException() { }
 
 	// Session Accessors
-	void					GetCookieJar() { }
-	void					GetAuthentication() { }
-	bool					UseProxy() { return false; }
-	void					GetProxyHost() { }
-	void					GetProxyPort() { }
-	bool					HasCertificateException() { return false; }
+	void						GetCookieJar() { }
+	void						GetAuthentication() { }
+	bool						UseProxy() { return false; }
+	void						GetProxyHost() { }
+	void						GetProxyPort() { }
+	bool						HasCertificateException() { return false; }
 
 	// Requests
-	void					AddRequest(BHttpRequest request);
+	std::future<BHttpResponse>	AddRequest(BHttpRequest request);
 
 private:
 	struct Wrapper;
 	struct Data;
-	std::shared_ptr<Data>	fData;
-	static	status_t		ControlThreadFunc(void* arg);
-	static	status_t		DataThreadFunc(void* arg);
+	std::shared_ptr<Data>		fData;
+	static	status_t			ControlThreadFunc(void* arg);
+	static	status_t			DataThreadFunc(void* arg);
 };
 
 }

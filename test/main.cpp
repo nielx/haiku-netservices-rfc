@@ -2,6 +2,7 @@
 #include <cstdint>
 
 #include <HttpRequest.h>
+#include <HttpResponse.h>
 #include <HttpSession.h>
 #include <SupportDefs.h>
 #include <Url.h>
@@ -43,8 +44,10 @@ void test_http_get_synchronous() {
 	assert(request);
 
 	auto session = BHttpSession();
-	session.AddRequest(std::move(request.value()));
-	snooze(10000000);
+	auto task = session.AddRequest(std::move(request.value()));
+	// get the response
+	auto response = task.get();
+	assert(response.status_code == 0);
 }
 
 

@@ -10,6 +10,7 @@
 #include <iostream>
 
 #include <HttpRequest.h>
+#include <HttpResponse.h>
 #include <HttpSession.h>
 #include <Locker.h>
 
@@ -32,15 +33,19 @@ struct BHttpSession::Data {
 
 
 struct BHttpSession::Wrapper {
-	BHttpRequest	request;
-				// Request state/events
+	BHttpRequest					request;
+	// Request state/events
 	enum {
 		kRequestInitialState,
 		kRequestStatusReceived,
 		kRequestHeadersReceived,
 		kRequestContentReceived,
 		kRequestTrailingHeadersReceived
-	}				requestStatus;
+	}				requestStatus = kRequestInitialState;
+	// Communication
+	std::promise<BHttpResponse>		promise;
+	// Data
+	BHttpResponse					response;
 };
 
 
@@ -70,13 +75,15 @@ BHttpSession::BHttpSession()
 }
 
 
-void
+std::future<BHttpResponse>
 BHttpSession::AddRequest(BHttpRequest request)
 {
-	BHttpSession::Wrapper wRequest{std::move(request), Wrapper::kRequestInitialState};
+	BHttpSession::Wrapper wRequest{std::move(request)};
+	auto retval = wRequest.promise.get_future();
 	AutoLocker<BLocker>(fData->lock);
 	fData->controlQueue.push_back(std::move(wRequest));
 	release_sem(fData->controlQueueSem);
+	return retval;
 }
 
 
@@ -84,8 +91,39 @@ BHttpSession::AddRequest(BHttpRequest request)
 BHttpSession::ControlThreadFunc(void* arg)
 {
 	BHttpSession::Data* data = static_cast<BHttpSession::Data*>(arg);
-	acquire_sem(data->controlQueueSem);
-	std::cout << "New request" << std::endl;
+	while (true) {
+		if (auto status = acquire_sem(data->controlQueueSem); status == B_INTERRUPTED)
+			continue;
+		else if (status != B_OK) {
+			// Most likely B_BAD_SEM_ID indicating that the sem was deleted
+			break;
+		}
+
+		// Process items on the queue
+		while (!data->controlQueue.empty()) {
+			auto request = std::move(data->controlQueue.front());
+			
+			switch (request.requestStatus) {
+				case Wrapper::kRequestInitialState:
+				{
+					std::cout << "Processing new request" << std::endl;
+					// TODO
+					request.response.status_code = 0;
+					request.response.error = BError(B_ERROR, "Not implemented");
+					request.promise.set_value(std::move(request.response));
+					break;
+				}
+				default:
+				{
+					// not handled at this stage
+					break;
+				}
+			}
+			data->controlQueue.pop_front();
+		}
+
+		release_sem(data->controlQueueSem);
+	}
 	return B_OK;
 }
 
@@ -94,6 +132,17 @@ BHttpSession::ControlThreadFunc(void* arg)
 BHttpSession::DataThreadFunc(void* arg)
 {
 	BHttpSession::Data* data = static_cast<BHttpSession::Data*>(arg);
-	acquire_sem(data->dataQueueSem);
+	while (true) {
+		if (auto status = acquire_sem(data->controlQueueSem); status == B_INTERRUPTED)
+			continue;
+		else if (status != B_OK) {
+			// Most likely B_BAD_SEM_ID indicating that the sem was deleted
+			break;
+		}
+
+		// TODO
+		
+		release_sem(data->dataQueueSem);
+	}
 	return B_OK;
 }
