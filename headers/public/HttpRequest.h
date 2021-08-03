@@ -37,22 +37,11 @@ public:
 	static	bool				IsServerErrorStatusCode(int16 code);
 	static	int16				StatusCodeClass(int16 code);
 
-protected:
-			void				_ResetOptions();
-			status_t			_ProtocolLoop();
-
 private:
 								BHttpRequest(const BUrl& url,
 									bool ssl, const BHttpMethod method);
-
+			void				_ResetOptions();
 			status_t			_MakeRequest();
-
-	// SSL failure management
-	friend	class				BPrivate::CheckedSecureSocket;
-	friend	class				BPrivate::CheckedProxySecureSocket;
-			bool				_CertificateVerificationFailed(
-									BCertificate& certificate,
-									const char* message);
 
 	// Request Data
 	friend	class				BHttpSession;
@@ -62,18 +51,6 @@ private:
 			int8				fHttpVersion;
 
 			BHttpHeaders		fHeaders;
-	// Request status
-
-			//BHttpResult			fResult;
-
-			// Request state/events
-			enum {
-				kRequestInitialState,
-				kRequestStatusReceived,
-				kRequestHeadersReceived,
-				kRequestContentReceived,
-				kRequestTrailingHeadersReceived
-			}					fRequestStatus;
 
 	// Protocol options
 			uint8				fOptMaxRedirs;

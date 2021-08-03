@@ -23,74 +23,11 @@ using BPrivate::BError;
 using namespace BPrivate::Network;
 
 
-namespace BPrivate {
-
-	class CheckedSecureSocket: public BSecureSocket
-	{
-		public:
-			CheckedSecureSocket(BHttpRequest* request);
-
-			bool			CertificateVerificationFailed(BCertificate& certificate,
-					const char* message);
-
-		private:
-			BHttpRequest*	fRequest;
-	};
-
-
-	CheckedSecureSocket::CheckedSecureSocket(BHttpRequest* request)
-		:
-		BSecureSocket(),
-		fRequest(request)
-	{
-	}
-
-
-	bool
-	CheckedSecureSocket::CertificateVerificationFailed(BCertificate& certificate,
-		const char* message)
-	{
-		return fRequest->_CertificateVerificationFailed(certificate, message);
-	}
-
-
-	class CheckedProxySecureSocket: public BProxySecureSocket
-	{
-		public:
-			CheckedProxySecureSocket(const BNetworkAddress& proxy, BHttpRequest* request);
-
-			bool			CertificateVerificationFailed(BCertificate& certificate,
-					const char* message);
-
-		private:
-			BHttpRequest*	fRequest;
-	};
-
-
-	CheckedProxySecureSocket::CheckedProxySecureSocket(const BNetworkAddress& proxy,
-		BHttpRequest* request)
-		:
-		BProxySecureSocket(proxy),
-		fRequest(request)
-	{
-	}
-
-
-	bool
-	CheckedProxySecureSocket::CertificateVerificationFailed(BCertificate& certificate,
-		const char* message)
-	{
-		return fRequest->_CertificateVerificationFailed(certificate, message);
-	}
-};
-
-
 BHttpRequest::BHttpRequest(const BUrl& url, bool ssl, const BHttpMethod method)
 	: fUrl(url),
 	fSSL(ssl),
 	fRequestMethod(method),
 	fHttpVersion(B_HTTP_11),
-	fRequestStatus(kRequestInitialState),
 	fOptHeaders(NULL),
 	fOptPostFields(NULL),
 	fOptInputData(NULL),
@@ -203,35 +140,3 @@ BHttpRequest::_ResetOptions()
 	fOptAutoReferer = true;
 }
 
-
-status_t
-BHttpRequest::_ProtocolLoop()
-{
-	return B_OK;
-}
-
-
-status_t
-BHttpRequest::_MakeRequest()
-{
-	return B_OK;
-}
-
-
-bool
-BHttpRequest::_CertificateVerificationFailed(BCertificate& certificate,
-	const char* message)
-{
-	// TODO
-/*	if (fContext->HasCertificateException(certificate))
-		return true;
-
-	if (fListener != NULL
-		&& fListener->CertificateVerificationFailed(this, certificate, message)) {
-		// User asked us to continue anyway, let's add a temporary exception for this certificate
-		fContext->AddCertificateException(certificate);
-		return true;
-	}*/
-
-	return false;
-}

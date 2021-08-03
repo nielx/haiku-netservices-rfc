@@ -38,6 +38,7 @@ public:
 								BHttpMethod(BHttpMethod&& other) = default;
 			BHttpMethod&		operator=(const BHttpMethod& other) = default;
 			BHttpMethod&		operator=(BHttpMethod&& other) = default;
+	const	std::string&		Method() const { return fMethod; }
 private:
 								BHttpMethod(std::string method);
 			std::string			fMethod;

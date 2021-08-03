@@ -8,6 +8,7 @@
 
 #include <deque>
 #include <iostream>
+#include <sstream>
 
 #include <HttpRequest.h>
 #include <HttpResponse.h>
@@ -30,6 +31,7 @@ struct BHttpSession::Data {
 	BLocker								lock;
 	// control queue
 	std::deque<BHttpSession::Wrapper>	controlQueue;
+	std::deque<BHttpSession::Wrapper>	dataQueue;
 };
 
 
@@ -38,6 +40,7 @@ struct BHttpSession::Wrapper {
 	// Request state/events
 	enum {
 		kRequestInitialState,
+		kRequestConnected,
 		kRequestStatusReceived,
 		kRequestHeadersReceived,
 		kRequestContentReceived,
@@ -48,6 +51,7 @@ struct BHttpSession::Wrapper {
 	// Data
 	BHttpResponse					response;
 	BNetworkAddress					remoteAddress;
+	std::unique_ptr<BSocket>		socket;
 };
 
 
@@ -102,24 +106,40 @@ BHttpSession::ControlThreadFunc(void* arg)
 		}
 
 		// Process items on the queue
-		while (!data->controlQueue.empty()) {
+		while (true) {
+			data->lock.Lock();
+			if (data->controlQueue.empty()){
+				data->lock.Unlock();
+				break;
+			}
 			auto request = std::move(data->controlQueue.front());
+			data->controlQueue.pop_front();
+			data->lock.Unlock();
 			
 			switch (request.requestStatus) {
 				case Wrapper::kRequestInitialState:
 				{
 					std::cout << "Processing new request" << std::endl;
-					if (_ResolveHostName(request)) {
-						// TODO
-						request.response.status_code = 5;
-						request.response.error = BError(B_ERROR, "Not implemented");
-						request.promise.set_value(std::move(request.response));
-						break;
-					} else {
+					if (!_ResolveHostName(request)) {
 						// Resolving the hostname failed
 						request.promise.set_value(std::move(request.response));
 						break;
 					}
+
+					if (!_OpenConnection(request)) {
+						// Connecting failed
+						request.promise.set_value(std::move(request.response));
+						break;
+					}
+
+					// TODO: further serialization (?)
+					
+					request.requestStatus = Wrapper::kRequestConnected;
+					data->lock.Lock();
+					data->dataQueue.push_back(std::move(request));
+					data->lock.Unlock();
+					release_sem(data->dataQueueSem);
+					break;
 				}
 				default:
 				{
@@ -127,10 +147,7 @@ BHttpSession::ControlThreadFunc(void* arg)
 					break;
 				}
 			}
-			data->controlQueue.pop_front();
 		}
-
-		release_sem(data->controlQueueSem);
 	}
 	return B_OK;
 }
@@ -141,16 +158,40 @@ BHttpSession::DataThreadFunc(void* arg)
 {
 	BHttpSession::Data* data = static_cast<BHttpSession::Data*>(arg);
 	while (true) {
-		if (auto status = acquire_sem(data->controlQueueSem); status == B_INTERRUPTED)
+		if (auto status = acquire_sem(data->dataQueueSem); status == B_INTERRUPTED)
 			continue;
 		else if (status != B_OK) {
 			// Most likely B_BAD_SEM_ID indicating that the sem was deleted
 			break;
 		}
 
-		// TODO
-		
-		release_sem(data->dataQueueSem);
+		// TODO: good implementation, this is the stupid implementation.
+		while (true) {
+			data->lock.Lock();
+			if (data->dataQueue.empty()) {
+				data->lock.Unlock();
+				break;
+			}
+			auto request = std::move(data->dataQueue.front());
+			data->dataQueue.pop_front();
+			data->lock.Unlock();
+
+			switch (request.requestStatus) {
+				case Wrapper::kRequestConnected:
+				{
+					// Start writing data
+					std::string requestHeaders = _CreateRequestHeaders(request);
+					request.socket->Write(requestHeaders.data(), requestHeaders.size());
+					request.response.status_code = 5;
+					request.response.error = BError();
+					request.promise.set_value(std::move(request.response));
+					// TODO: write Post Data (if applicable)
+					//		Idea: add a status kRequestFirstHeaderWritten, and do a non-blocking Write call
+					//		to write the rest.
+					break;
+				}
+			}
+		}
 	}
 	return B_OK;
 }
@@ -163,7 +204,7 @@ BHttpSession::_ResolveHostName(Wrapper& request)
 	int port = request.request.fSSL ? 443 : 80;
 	if (request.request.fUrl.HasPort())
 		port = request.request.fUrl.Port();
-	
+
 	// TODO: proxy
 	request.remoteAddress.SetTo(request.request.fUrl.Host(), port);
 	if (auto status = request.remoteAddress.InitCheck(); status != B_OK) {
@@ -175,3 +216,118 @@ BHttpSession::_ResolveHostName(Wrapper& request)
 	// TODO: inform any listeners, though maybe that is not the job of this helper?
 	return true;
 }
+
+
+/*static*/ bool
+BHttpSession::_OpenConnection(Wrapper& request)
+{
+	// Set up the socket
+	std::unique_ptr<BSocket> socket = nullptr;
+	if (request.request.fSSL) {
+		// To do: secure socket with callbacks to check certificates
+		socket = std::make_unique<BSecureSocket>();
+	} else {
+		socket = std::make_unique<BSocket>();
+	}
+
+	// Open connection
+	if (auto status = socket->Connect(request.remoteAddress); status != B_OK) {
+		// TODO: inform listeners that the connection failed
+		request.response.status_code = 0;
+		request.response.error = BError(status, "Cannot connect to host");
+		return false;
+	}
+
+	// TODO: inform the listeners that the connection was opened.
+	request.socket = std::move(socket);
+	return true;
+}
+
+/*static*/ std::string
+BHttpSession::_CreateRequestHeaders(Wrapper& request)
+{
+	std::stringstream headerStream;
+	const auto& httpRequest = request.request;
+
+	// Create the first line of the request header
+	headerStream << httpRequest.fRequestMethod.Method();
+	headerStream << ' ';
+
+	// TODO: proxy
+
+	if (httpRequest.fUrl.HasPath() && httpRequest.fUrl.Path().Length() > 0)
+		headerStream << httpRequest.fUrl.Path();
+	else
+		headerStream << '/';
+
+	switch (httpRequest.fHttpVersion) {
+		case B_HTTP_11:
+			headerStream << " HTTP/1.1\r\n";
+			break;
+
+		default:
+		case B_HTTP_10:
+			headerStream << " HTTP/1.0\r\n";
+			break;
+	}
+
+	BHttpHeaders outputHeaders;
+
+	// HTTP 1.1 additional headers
+	if (httpRequest.fHttpVersion == B_HTTP_11) {
+		BString host = httpRequest.fUrl.Host();
+		int defaultPort = httpRequest.fSSL ? 443 : 80;
+		if (httpRequest.fUrl.HasPort() && httpRequest.fUrl.Port() != defaultPort)
+			host << ':' << httpRequest.fUrl.Port();
+
+		outputHeaders.AddHeader("Host", host);
+
+		outputHeaders.AddHeader("Accept", "*/*");
+		outputHeaders.AddHeader("Accept-Encoding", "gzip");
+			// Allows the server to compress data using the "gzip" format.
+			// "deflate" is not supported, because there are two interpretations
+			// of what it means (the RFC and Microsoft products), and we don't
+			// want to handle this. Very few websites support only deflate,
+			// and most of them will send gzip, or at worst, uncompressed data.
+
+		outputHeaders.AddHeader("Connection", "close");
+			// Let the remote server close the connection after response since
+			// we don't handle multiple request on a single connection
+	}
+
+	// Classic HTTP headers
+	if (httpRequest.fOptUserAgent.CountChars() > 0)
+		outputHeaders.AddHeader("User-Agent", httpRequest.fOptUserAgent.String());
+
+	if (httpRequest.fOptReferer.CountChars() > 0)
+		outputHeaders.AddHeader("Referer", httpRequest.fOptReferer.String());
+
+	// TODO: Optional range requests headers
+
+	// TODO: Authentication
+
+	// TODO: Required headers for POST data
+
+	// TODO: Optional headers specified by the user
+
+	// TODO: Context cookies
+
+	// TODO: proper debug
+
+	// Write output headers to output stream
+	for (int32 headerIndex = 0; headerIndex < outputHeaders.CountHeaders();
+			headerIndex++) {
+		const char* header = outputHeaders.HeaderAt(headerIndex).Header();
+
+		headerStream << header;
+		headerStream << "\r\n";
+	}
+
+	// End of header text
+	headerStream << "\r\n";
+
+	// TODO: proper debug
+	std::cout << headerStream.str();
+
+	return headerStream.str();
+}	
