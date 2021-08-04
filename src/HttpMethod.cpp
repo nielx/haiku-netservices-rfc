@@ -85,3 +85,10 @@ BHttpMethod::Make(std::string method)
 	 // Todo: check http spec
 	 return BHttpMethod(method);
 }
+
+
+bool
+BHttpMethod::operator==(const BHttpMethod& other) const
+{
+	return fMethod == other.fMethod;
+}
