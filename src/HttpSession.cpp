@@ -15,6 +15,7 @@
 #include <HttpSession.h>
 #include <Locker.h>
 #include <NetworkAddress.h>
+#include <StackOrHeapArray.h>
 
 #include "AutoLocker.h"
 
@@ -48,10 +49,20 @@ struct BHttpSession::Wrapper {
 	}				requestStatus = kRequestInitialState;
 	// Communication
 	std::promise<BHttpResponse>		promise;
-	// Data
+
+	// Connection
 	BHttpResponse					response;
 	BNetworkAddress					remoteAddress;
 	std::unique_ptr<BSocket>		socket;
+
+	// Receive state
+	bool							receiveEnd = false;
+	bool							parseEnd = false;
+	BNetBuffer						inputBuffer;
+	size_t							previousBufferSize = 0;
+	off_t							bytesReceived;
+	off_t							bytesTotal;
+	// TODO: reset method to reset Connection and Receive State when redirected
 };
 
 
@@ -182,10 +193,13 @@ BHttpSession::DataThreadFunc(void* arg)
 					// Start writing data
 					std::string requestHeaders = _CreateRequestHeaders(request);
 					request.socket->Write(requestHeaders.data(), requestHeaders.size());
+					// TODO: write Post Data (if applicable)
+					while (!_RequestRead(request)) {
+						// wait
+					}
 					request.response.status_code = 5;
 					request.response.error = BError();
 					request.promise.set_value(std::move(request.response));
-					// TODO: write Post Data (if applicable)
 					//		Idea: add a status kRequestFirstHeaderWritten, and do a non-blocking Write call
 					//		to write the rest.
 					break;
@@ -330,4 +344,126 @@ BHttpSession::_CreateRequestHeaders(Wrapper& request)
 	std::cout << headerStream.str();
 
 	return headerStream.str();
-}	
+}
+
+
+static const size_t kHttpBufferSize = 4096;
+
+
+/*static*/ bool
+BHttpSession::_RequestRead(Wrapper& request)
+{
+	// There are two actions combined; one is to receive data, the other is to
+	// decode downloaded data in the buffer.
+	//
+	// Once all data is received (or there is an error), return true to
+	// indicate that all the reading and processing is completed.
+
+	// First check if we are going to download data
+	size_t bytesRead = 0;
+	if ((!request.receiveEnd) && (request.inputBuffer.Size() == request.previousBufferSize)) {
+		std::array<char, kHttpBufferSize> chunk;
+		bytesRead = request.socket->Read(chunk.data(), kHttpBufferSize);
+		std::cout << "_RequestRead bytesRead: " << bytesRead << std::endl;
+
+		if (bytesRead < 0) {
+			request.response.status_code = 0;
+			request.response.error = BError(bytesRead, "Error reading data from host");
+			return true;
+		} else if (bytesRead == 0) {
+			// Check if we got the expected number of bytes.
+			// Exceptions:
+			// - If the content-length is not known (bytesTotal is 0), for
+			//   example in the case of a chunked transfer, we can't know
+			// - If the request method is "HEAD" which explicitly asks the
+			//   server to not send any data (only the headers)
+			if (request.bytesTotal > 0 && request.bytesReceived != request.bytesTotal) {
+				request.response.status_code = 0;
+				request.response.error = BError(B_IO_ERROR, "Error reading data from host: unexpected end of data");
+				return true;
+			}
+			request.receiveEnd = true;
+		}
+		request.inputBuffer.AppendData(chunk.data(), bytesRead);
+	} else
+		bytesRead = 0;
+	
+	request.previousBufferSize = request.inputBuffer.Size();
+	
+	if (request.requestStatus < Wrapper::kRequestStatusReceived) {
+		_ParseStatus(request);
+
+		if (request.request.fOptFollowLocation
+			&& request.request.IsRedirectionStatusCode(request.response.status_code))
+				// do nothing for now, in the original code this disables the listener
+				;
+
+		if (request.request.fOptStopOnError
+			&& request.response.status_code >= B_HTTP_STATUS_CLASS_CLIENT_ERROR)
+				return true; // we will not continue anymore
+
+		// TODO: inform listeners of receiving the status code
+	}
+
+	// Set temporary error
+	request.response.status_code = 5;
+	request.response.error = BError();
+	return true;
+}
+
+
+// Helper to extract a single line from a BNetBuffer
+static Expected<std::string, status_t>
+GetLine(BNetBuffer& buffer)
+{
+	size_t characterIndex = 0;
+	while ((characterIndex < buffer.Size())
+		&& ((buffer.Data())[characterIndex] != '\n'))
+		characterIndex++;
+
+	if (characterIndex == buffer.Size()) {
+		return Unexpected<status_t>(B_ERROR);
+	}
+
+	// FUTURE: BNetBuffer requires an extra copy. It should be possible
+	// to copy data directly from the pointer to the buffer, and then ask
+	// the object to drop the number of bytes instead of forcing a double
+	// copy or some evil casting.
+	BStackOrHeapArray<char, 4096> tempData(characterIndex + 1);
+	if (!tempData.IsValid())
+		return Unexpected<status_t>(B_NO_MEMORY);
+
+	buffer.RemoveData(tempData, characterIndex + 1);
+
+	if (characterIndex != 0 && tempData[characterIndex -1] == '\r')
+		return std::string(tempData, characterIndex -1);
+	else
+		return std::string(tempData, characterIndex);
+}
+
+
+/*static*/ void
+BHttpSession::_ParseStatus(Wrapper& request)
+{
+	auto statusLine = GetLine(request.inputBuffer);
+	if (!statusLine)
+		return;
+	if (statusLine.value().size() < 12)
+		return;
+
+	std::string statusCodeStr(statusLine.value(), 9, 3);
+	try {
+		request.response.status_code = std::stol(statusCodeStr);
+	} catch (std::invalid_argument) {
+		std::cout << "Error getting status code" << std::endl;
+		return;
+	}
+	
+	request.response.status_text = std::string(statusLine.value().begin() + 13, statusLine.value().end());
+
+	// TODO: EmitDebug
+	std::cout << "Status line received: Code " << request.response.status_code
+		<< " (" << request.response.status_text << ")" << std::endl;
+
+	request.requestStatus = Wrapper::kRequestStatusReceived;
+}

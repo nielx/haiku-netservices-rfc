@@ -51,6 +51,8 @@ private:
 	static	bool				_ResolveHostName(Wrapper& request);
 	static	bool				_OpenConnection(Wrapper& request);
 	static	std::string			_CreateRequestHeaders(Wrapper& request);
+	static	bool				_RequestRead(Wrapper& request);
+	static	void				_ParseStatus(Wrapper& request);
 };
 
 }
