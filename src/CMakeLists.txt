@@ -13,4 +13,6 @@ add_library(netservices_rfc
 
 target_include_directories(netservices_rfc PUBLIC
                            "${PROJECT_SOURCE_DIR}/headers/public" 
+                           "/boot/system/develop/headers/private/net"
+                           "/boot/system/develop/headers/private/support"
                            )

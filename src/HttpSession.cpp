@@ -10,12 +10,14 @@
 #include <iostream>
 #include <sstream>
 
+#include <DynamicBuffer.h>
 #include <HttpRequest.h>
 #include <HttpResponse.h>
 #include <HttpSession.h>
 #include <Locker.h>
 #include <NetworkAddress.h>
 #include <StackOrHeapArray.h>
+#include <ZlibCompressionAlgorithm.h>
 
 #include "AutoLocker.h"
 
@@ -60,8 +62,13 @@ struct BHttpSession::Wrapper {
 	bool							parseEnd = false;
 	BNetBuffer						inputBuffer;
 	size_t							previousBufferSize = 0;
-	off_t							bytesReceived;
-	off_t							bytesTotal;
+	off_t							bytesReceived = 0;
+	off_t							bytesTotal = 0;
+	BHttpHeaders					headers;
+	bool							readByChunks = false;
+	bool							decompress = false;
+	DynamicBuffer					decompressorStorage;
+	std::unique_ptr<BDataIO>		decompressingStream = nullptr;
 	// TODO: reset method to reset Connection and Receive State when redirected
 };
 
@@ -405,6 +412,64 @@ BHttpSession::_RequestRead(Wrapper& request)
 		// TODO: inform listeners of receiving the status code
 	}
 
+	if (request.requestStatus < Wrapper::kRequestHeadersReceived) {
+		_ParseHeaders(request);
+
+		if (request.requestStatus >= Wrapper::kRequestHeadersReceived) {
+			// TODO: move
+			request.response.headers = request.headers;
+
+			// TODO: Parse received cookies
+
+			// TODO: let the receivers know that the headers have been received
+
+			// transfer-encoding
+			try {
+				if (std::string(request.headers["Transfer-Encoding"]) == "chunked")
+					request.readByChunks = true;
+			} catch (std::logic_error) {
+				// header not found
+			}
+
+			// content-encoding
+			try {
+				std::string contentEncoding(request.headers["Content-Encoding"]);
+				if (contentEncoding == "gzip" || contentEncoding == "deflate") {
+					request.decompress = true;
+					BDataIO* stream = nullptr;
+					auto result = BZlibCompressionAlgorithm()
+						.CreateDecompressingOutputStream(&request.decompressorStorage,
+							NULL, stream);
+					if (result != B_OK) {
+						request.response.status_code = 0;
+						request.response.error = BError(result, "Could not create decompression stream");
+						return true;
+					}
+					request.decompressingStream = std::unique_ptr<BDataIO>(stream);
+				}
+			} catch (std::logic_error) {
+				// header not found
+			}
+
+			// content-length
+			try {
+				std::string contentLength(request.headers["Content-Length"]);
+				request.bytesTotal = std::stol(contentLength);
+			} catch (std::logic_error) {
+				// header not found or malformed
+				request.bytesTotal = -1;
+			}
+
+			if (request.request.fRequestMethod == BHttpMethod::Head()
+				|| request.response.status_code == 204) {
+				// In the case of a HEAD request or if the server replies
+				// 204 ("no content"), we don't expect to receive anything
+				// more, and the socket will be closed.
+				return true;
+			}
+		}
+	}
+
 	// Set temporary error
 	request.response.status_code = 5;
 	request.response.error = BError();
@@ -466,4 +531,25 @@ BHttpSession::_ParseStatus(Wrapper& request)
 		<< " (" << request.response.status_text << ")" << std::endl;
 
 	request.requestStatus = Wrapper::kRequestStatusReceived;
+}
+
+/*static*/ void
+BHttpSession::_ParseHeaders(Wrapper& request)
+{
+	while (true) {
+		auto currentHeader = GetLine(request.inputBuffer);
+		if (!currentHeader)
+			return;
+
+		// An emtpy line means the end of the header section
+		if (currentHeader.value().size() == 0) {
+			std::cout << "End of Headers" << std::endl;
+			request.requestStatus = Wrapper::kRequestHeadersReceived;
+			return;
+		}
+
+		// TODO: EmitDebug
+		std::cout << "Header Received: " << currentHeader.value() << std::endl;
+		request.headers.AddHeader(currentHeader.value().c_str());
+	}
 }

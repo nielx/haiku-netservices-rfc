@@ -11,9 +11,10 @@ namespace Network {
 
 
 struct BHttpResponse {
-	int32		status_code;
-	std::string	status_text;
-	BError		error;
+	int32			status_code;
+	std::string		status_text;
+	BError			error;
+	BHttpHeaders	headers;
 };
 
 

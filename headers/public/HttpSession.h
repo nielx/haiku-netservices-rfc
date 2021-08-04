@@ -53,6 +53,7 @@ private:
 	static	std::string			_CreateRequestHeaders(Wrapper& request);
 	static	bool				_RequestRead(Wrapper& request);
 	static	void				_ParseStatus(Wrapper& request);
+	static	void				_ParseHeaders(Wrapper& request);
 };
 
 }
