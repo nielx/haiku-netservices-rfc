@@ -15,6 +15,7 @@ struct BHttpResponse {
 	std::string		status_text;
 	BError			error;
 	BHttpHeaders	headers;
+	std::string		body;
 };
 
 

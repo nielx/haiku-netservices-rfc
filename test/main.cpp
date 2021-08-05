@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstdint>
+#include <iostream>
 
 #include <HttpRequest.h>
 #include <HttpResponse.h>
@@ -47,7 +48,8 @@ void test_http_get_synchronous() {
 	auto task = session.AddRequest(std::move(request.value()));
 	// get the response
 	auto response = task.get();
-	assert(response.status_code == 5);
+	assert(response.status_code == 200);
+	std::cout << response.body << std::endl;
 }
 
 

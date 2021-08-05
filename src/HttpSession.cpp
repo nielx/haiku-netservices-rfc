@@ -9,6 +9,7 @@
 #include <deque>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
 #include <DynamicBuffer.h>
 #include <HttpRequest.h>
@@ -69,6 +70,8 @@ struct BHttpSession::Wrapper {
 	bool							decompress = false;
 	DynamicBuffer					decompressorStorage;
 	std::unique_ptr<BDataIO>		decompressingStream = nullptr;
+	std::vector<char>				inputTempBuffer = std::vector<char>(4096);
+		// TODO: is this the best way of allocating this temp buffer?
 	// TODO: reset method to reset Connection and Receive State when redirected
 };
 
@@ -200,15 +203,15 @@ BHttpSession::DataThreadFunc(void* arg)
 					// Start writing data
 					std::string requestHeaders = _CreateRequestHeaders(request);
 					request.socket->Write(requestHeaders.data(), requestHeaders.size());
+					//		Idea: add a status kRequestFirstHeaderWritten, and do a non-blocking Write call
+					//		to write the rest.
 					// TODO: write Post Data (if applicable)
 					while (!_RequestRead(request)) {
 						// wait
 					}
-					request.response.status_code = 5;
-					request.response.error = BError();
+
+					// Todo: check if request is completed
 					request.promise.set_value(std::move(request.response));
-					//		Idea: add a status kRequestFirstHeaderWritten, and do a non-blocking Write call
-					//		to write the rest.
 					break;
 				}
 			}
@@ -394,9 +397,9 @@ BHttpSession::_RequestRead(Wrapper& request)
 		request.inputBuffer.AppendData(chunk.data(), bytesRead);
 	} else
 		bytesRead = 0;
-	
+
 	request.previousBufferSize = request.inputBuffer.Size();
-	
+
 	if (request.requestStatus < Wrapper::kRequestStatusReceived) {
 		_ParseStatus(request);
 
@@ -470,10 +473,75 @@ BHttpSession::_RequestRead(Wrapper& request)
 		}
 	}
 
-	// Set temporary error
-	request.response.status_code = 5;
-	request.response.error = BError();
-	return true;
+	if (request.requestStatus >= Wrapper::kRequestHeadersReceived) {
+		// If Transfer-Encoding is chunked, we should read a complete
+		// chunk in buffer before handling it
+		if (request.readByChunks)
+			throw std::runtime_error("Not implemented");
+		else {
+			bytesRead = request.inputBuffer.Size();
+
+			if (bytesRead > 0) {
+				if (request.inputTempBuffer.size() < bytesRead)
+					request.inputTempBuffer.resize(bytesRead);
+				request.inputBuffer.RemoveData(request.inputTempBuffer.data(), bytesRead);
+			}
+		}
+
+		if (bytesRead >= 0) {
+			request.bytesReceived += bytesRead;
+
+			// NOTE: the original version has a mode where the user does not
+			// want the output and is not listening to the outcome, a sort of
+			// zombie version. The new version will not support that.
+			if (request.decompress) {
+				auto status = request.decompressingStream->WriteExactly(
+					request.inputTempBuffer.data(), bytesRead);
+				if (status != B_OK) {
+					request.response.status_code = 0;
+					request.response.error = BError(status, "Error decompressing data");
+					return true;
+				}
+				ssize_t size = request.decompressorStorage.Size();
+				BStackOrHeapArray<char, 4096> buffer(size);
+				size = request.decompressorStorage.Read(buffer, size);
+				if (size > 0) {
+					// TODO: support other output mechanisms
+					request.response.body.append(buffer, size);
+					// TODO: notify listeners
+				}
+			} else {
+				request.response.body.append(request.inputTempBuffer.data(), bytesRead);
+				// TODO: notify listener
+			}
+			
+			if (request.bytesTotal >= 0 && request.bytesReceived >= request.bytesTotal)
+				request.receiveEnd = true;
+
+			if (request.decompress && request.receiveEnd) {
+				auto status = request.decompressingStream->Flush();
+
+				if (status != B_OK && status != B_BUFFER_OVERFLOW) {
+					request.response.status_code = 0;
+					request.response.error = BError(status, "Error flushing decompression stream");
+					return true;
+				}
+
+				ssize_t size = request.decompressorStorage.Size();
+				BStackOrHeapArray<char, 4096> buffer(size);
+				size = request.decompressorStorage.Read(buffer, size);
+				if (size > 0) {
+					request.response.body.append(buffer, size);
+					// TODO: notify listener
+				}
+			}
+		}
+		request.parseEnd = (request.inputBuffer.Size() == 0);
+	}
+
+	if (request.receiveEnd && request.parseEnd)
+		return true; //done
+	return false;
 }
 
 
