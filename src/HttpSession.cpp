@@ -207,46 +207,90 @@ BHttpSession::DataThreadFunc(void* arg)
 				// Most likely B_BAD_SEM_ID indicating that the sem was deleted
 				break;
 			}
-			
-			// TODO: actually move something from the data thread to list of things to be processed
-		} else if (data->objectList[0].events == B_EVENT_INVALID) {
+
+			// Move requests from the dataQueue to our internal request admin
+			data->lock.Lock();
+			while (!data->dataQueue.empty()) {
+				auto request = std::move(data->dataQueue.front());
+				data->dataQueue.pop_front();
+				auto socket = request.socket->Socket();
+				
+				data->connectionMap.insert(std::make_pair(socket, std::move(request)));
+
+				// Add to objectList
+				data->objectList.push_back(object_wait_info{socket,
+					B_OBJECT_TYPE_FD, B_EVENT_WRITE
+				});
+			}
+			data->lock.Unlock();
+		} else if ((data->objectList[0].events & B_EVENT_INVALID) == B_EVENT_INVALID) {
 			// The semaphore has been deleted. Start the cleanup
 			break;
 		}
 
+		// Process all objects that are ready
 		// TODO: good implementation, this is the stupid implementation.
-		while (true) {
-			data->lock.Lock();
-			if (data->dataQueue.empty()) {
-				data->lock.Unlock();
-				break;
-			}
-			auto request = std::move(data->dataQueue.front());
-			data->dataQueue.pop_front();
-			data->lock.Unlock();
-
-			switch (request.requestStatus) {
-				case Wrapper::kRequestConnected:
-				{
-					// Start writing data
-					std::string requestHeaders = _CreateRequestHeaders(request);
-					request.socket->Write(requestHeaders.data(), requestHeaders.size());
-					//		Idea: add a status kRequestFirstHeaderWritten, and do a non-blocking Write call
-					//		to write the rest.
-					// TODO: write Post Data (if applicable)
-					while (!_RequestRead(request)) {
-						// wait
+		bool resizeObjectList = false;
+		for(auto& item: data->objectList) {
+			if (item.type != B_OBJECT_TYPE_FD)
+				continue;
+			if ((item.events & B_EVENT_WRITE) == B_EVENT_WRITE) {
+				std::cout << "> Processing write for " << item.object << std::endl;
+				auto& request = data->connectionMap.find(item.object)->second;
+				switch (request.requestStatus) {
+					case Wrapper::kRequestConnected: 
+					{
+						// Start writing data
+						std::string requestHeaders = _CreateRequestHeaders(request);
+						request.socket->Write(requestHeaders.data(), requestHeaders.size());
+						//		Idea: add a status kRequestFirstHeaderWritten, and do a non-blocking Write call
+						//		to write the rest.
+						// TODO: write Post Data (if applicable)
+						break;
 					}
-
-					// Todo: check if request is completed
-					request.promise.set_value(std::move(request.response));
-					break;
+					default:
+						throw std::runtime_error("Write status for object that is in the wrong state");
 				}
+			} else if ((item.events & B_EVENT_READ) == B_EVENT_READ) {
+				std::cout << "Processing read for " << item.object << std::endl;
+				auto& request = data->connectionMap.find(item.object)->second;
+				while (!_RequestRead(request)) {
+					// wait
+				}
+				request.promise.set_value(std::move(request.response));
+				request.socket->Disconnect();
+				data->connectionMap.erase(item.object);
+				resizeObjectList = true;
+			} else if ((item.events & B_EVENT_DISCONNECTED) == B_EVENT_DISCONNECTED) {
+				std::cout << "Unexpected disconnect for " << item.object << std::endl;
+				auto& request = data->connectionMap.find(item.object)->second;
+				request.response.status_code = 0;
+				request.response.error = BError(B_IO_ERROR, "Connection was closed unexpectedly");
+				request.promise.set_value(std::move(request.response));
+				data->connectionMap.erase(item.object);
+				resizeObjectList = true;
+			} else {
+				// Likely to be B_EVENT_INVALID. This should not happen
+				throw std::runtime_error("Socket was deleted at an unexpected time");
 			}
 		}
 
 		// Reset objectList
 		data->objectList[0].events = B_EVENT_ACQUIRE_SEMAPHORE;
+		if (resizeObjectList) {
+			data->objectList.resize(data->connectionMap.size() + 1);
+		}
+		auto i = 1;
+		for (auto it = data->connectionMap.cbegin(); it != data->connectionMap.cend(); it++) {
+			data->objectList[i].object = it->first;
+			if (it->second.requestStatus == Wrapper::kRequestInitialState)
+				throw std::runtime_error("Invalid state of request");
+			else if (it->second.requestStatus == Wrapper::kRequestInitialState)
+				data->objectList[i].events = B_EVENT_WRITE | B_EVENT_DISCONNECTED;
+			else
+				data->objectList[i].events = B_EVENT_READ | B_EVENT_DISCONNECTED;
+			i++;
+		}
 	}
 	return B_OK;
 }
