@@ -7,6 +7,7 @@
  */
 
 #include <deque>
+#include <fcntl.h>
 #include <iostream>
 #include <map>
 #include <sstream>
@@ -116,6 +117,20 @@ BHttpSession::AddRequest(BHttpRequest request)
 	fData->controlQueue.push_back(std::move(wRequest));
 	release_sem(fData->controlQueueSem);
 	return retval;
+}
+
+
+static void
+SetSocketNonBlocking(int socket)
+{
+	if (socket < 0)
+		throw std::runtime_error("Invalid socket");
+
+	int flags = fcntl(socket, F_GETFL, 0);
+	if (flags == -1)
+		throw std::runtime_error("Error getting socket flags");
+	if (fcntl(socket, F_SETFL, flags | O_NONBLOCK) != 0)
+		throw std::runtime_error("Error setting non-blocking flag on socket");
 }
 
 
@@ -254,13 +269,13 @@ BHttpSession::DataThreadFunc(void* arg)
 			} else if ((item.events & B_EVENT_READ) == B_EVENT_READ) {
 				std::cout << "Processing read for " << item.object << std::endl;
 				auto& request = data->connectionMap.find(item.object)->second;
-				while (!_RequestRead(request)) {
-					// wait
+				auto finished = _RequestRead(request);
+				if (finished) {
+					request.promise.set_value(std::move(request.response));
+					request.socket->Disconnect();
+					data->connectionMap.erase(item.object);
+					resizeObjectList = true;
 				}
-				request.promise.set_value(std::move(request.response));
-				request.socket->Disconnect();
-				data->connectionMap.erase(item.object);
-				resizeObjectList = true;
 			} else if ((item.events & B_EVENT_DISCONNECTED) == B_EVENT_DISCONNECTED) {
 				std::cout << "Unexpected disconnect for " << item.object << std::endl;
 				auto& request = data->connectionMap.find(item.object)->second;
@@ -336,6 +351,9 @@ BHttpSession::_OpenConnection(Wrapper& request)
 		request.response.error = BError(status, "Cannot connect to host");
 		return false;
 	}
+
+	// Make the rest of the interaction non-blocking
+	SetSocketNonBlocking(socket->Socket());
 
 	// TODO: inform the listeners that the connection was opened.
 	request.socket = std::move(socket);
@@ -449,6 +467,10 @@ BHttpSession::_RequestRead(Wrapper& request)
 	if ((!request.receiveEnd) && (request.inputBuffer.Size() == request.previousBufferSize)) {
 		std::array<char, kHttpBufferSize> chunk;
 		bytesRead = request.socket->Read(chunk.data(), kHttpBufferSize);
+		if (bytesRead == B_WOULD_BLOCK) {
+			std::cout << "WOULD BLOCK" << std::endl;
+			return false;
+		}
 		std::cout << "_RequestRead bytesRead: " << bytesRead << std::endl;
 
 		if (bytesRead < 0) {
