@@ -8,6 +8,7 @@
 
 #include <deque>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <vector>
 
@@ -17,6 +18,7 @@
 #include <HttpSession.h>
 #include <Locker.h>
 #include <NetworkAddress.h>
+#include <OS.h>
 #include <StackOrHeapArray.h>
 #include <ZlibCompressionAlgorithm.h>
 
@@ -36,6 +38,9 @@ struct BHttpSession::Data {
 	// control queue
 	std::deque<BHttpSession::Wrapper>	controlQueue;
 	std::deque<BHttpSession::Wrapper>	dataQueue;
+	// data owned by the dataThread
+	std::map<int,BHttpSession::Wrapper>	connectionMap;
+	std::vector<object_wait_info>		objectList;
 };
 
 
@@ -178,11 +183,34 @@ BHttpSession::ControlThreadFunc(void* arg)
 BHttpSession::DataThreadFunc(void* arg)
 {
 	BHttpSession::Data* data = static_cast<BHttpSession::Data*>(arg);
+	// initial initialization of wait list
+	data->objectList.push_back(object_wait_info{data->dataQueueSem,
+		B_OBJECT_TYPE_SEMAPHORE, B_EVENT_ACQUIRE_SEMAPHORE
+	});
+
 	while (true) {
-		if (auto status = acquire_sem(data->dataQueueSem); status == B_INTERRUPTED)
-			continue;
-		else if (status != B_OK) {
-			// Most likely B_BAD_SEM_ID indicating that the sem was deleted
+		if (auto status = wait_for_objects(data->objectList.data(),
+			data->objectList.size()); status < B_OK)
+		{
+			// Something went unexplicably wrong
+			throw std::runtime_error("BHttpSession[dataThread]: error waiting for objects");
+		}
+
+		std::cout << "dataThread: objects ready" << std::endl;
+
+		// First check if the change is in acquiring the sem, meaning that
+		// there are new requests to be scheduled
+		if (data->objectList[0].events == B_EVENT_ACQUIRE_SEMAPHORE) {
+			if (auto status = acquire_sem(data->dataQueueSem); status == B_INTERRUPTED)
+				continue;
+			else if (status != B_OK) {
+				// Most likely B_BAD_SEM_ID indicating that the sem was deleted
+				break;
+			}
+			
+			// TODO: actually move something from the data thread to list of things to be processed
+		} else if (data->objectList[0].events == B_EVENT_INVALID) {
+			// The semaphore has been deleted. Start the cleanup
 			break;
 		}
 
@@ -216,6 +244,9 @@ BHttpSession::DataThreadFunc(void* arg)
 				}
 			}
 		}
+
+		// Reset objectList
+		data->objectList[0].events = B_EVENT_ACQUIRE_SEMAPHORE;
 	}
 	return B_OK;
 }
