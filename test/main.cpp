@@ -3,7 +3,7 @@
 #include <iostream>
 
 #include <HttpRequest.h>
-#include <HttpResponse.h>
+#include <HttpResult.h>
 #include <HttpSession.h>
 #include <SupportDefs.h>
 #include <Url.h>
@@ -45,11 +45,12 @@ void test_http_get_synchronous() {
 	assert(request);
 
 	auto session = BHttpSession();
-	auto task = session.AddRequest(std::move(request.value()));
+	auto result = session.AddRequest(std::move(request.value()));
 	// get the response
-	auto response = task.get();
-	assert(response.status_code == 200);
-	std::cout << response.body << std::endl;
+	auto status = result.Status();
+	if (status)
+		assert(status.value().get().code == 200);
+	//std::cout << response.body << std::endl;
 }
 
 

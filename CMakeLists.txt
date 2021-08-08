@@ -6,3 +6,7 @@ add_subdirectory(src)
 
 add_executable(Tests test/main.cpp)
 target_link_libraries(Tests PUBLIC -lbe -lbnetapi netservices_rfc)
+
+set_target_properties(Tests PROPERTIES
+	CXX_STANDARD 17
+)

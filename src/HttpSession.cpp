@@ -15,7 +15,7 @@
 
 #include <DynamicBuffer.h>
 #include <HttpRequest.h>
-#include <HttpResponse.h>
+#include <HttpResult.h>
 #include <HttpSession.h>
 #include <Locker.h>
 #include <NetworkAddress.h>
@@ -57,10 +57,12 @@ struct BHttpSession::Wrapper {
 		kRequestTrailingHeadersReceived
 	}				requestStatus = kRequestInitialState;
 	// Communication
-	std::promise<BHttpResponse>		promise;
+	BMessenger						observer;
+	std::promise<BHttpStatus>		statusPromise;
+	std::promise<BHttpHeaders>		headersPromise;
+	std::promise<std::string>		bodyPromise;
 
 	// Connection
-	BHttpResponse					response;
 	BNetworkAddress					remoteAddress;
 	std::unique_ptr<BSocket>		socket;
 
@@ -77,6 +79,8 @@ struct BHttpSession::Wrapper {
 	DynamicBuffer					decompressorStorage;
 	std::unique_ptr<BDataIO>		decompressingStream = nullptr;
 	std::vector<char>				inputTempBuffer = std::vector<char>(4096);
+	BHttpStatus						status;
+	std::string						body;
 		// TODO: is this the best way of allocating this temp buffer?
 	// TODO: reset method to reset Connection and Receive State when redirected
 };
@@ -108,11 +112,16 @@ BHttpSession::BHttpSession()
 }
 
 
-std::future<BHttpResponse>
-BHttpSession::AddRequest(BHttpRequest request)
+BHttpResult
+BHttpSession::AddRequest(BHttpRequest request, BMessenger observer)
 {
 	BHttpSession::Wrapper wRequest{std::move(request)};
-	auto retval = wRequest.promise.get_future();
+	wRequest.observer = observer;
+	auto statusFuture = wRequest.statusPromise.get_future();
+	auto headersFuture = wRequest.headersPromise.get_future();
+	auto bodyFuture = wRequest.bodyPromise.get_future();
+	auto retval = BHttpResult(std::move(statusFuture), std::move(headersFuture),
+		std::move(bodyFuture), 1);
 	AutoLocker<BLocker>(fData->lock);
 	fData->controlQueue.push_back(std::move(wRequest));
 	release_sem(fData->controlQueueSem);
@@ -161,20 +170,23 @@ BHttpSession::ControlThreadFunc(void* arg)
 				case Wrapper::kRequestInitialState:
 				{
 					std::cout << "Processing new request" << std::endl;
-					if (!_ResolveHostName(request)) {
-						// Resolving the hostname failed
-						request.promise.set_value(std::move(request.response));
-						break;
+					bool hasError = false;
+					try {
+						_ResolveHostName(request);
+						_OpenConnection(request);
+					} catch (BError) {
+						request.statusPromise.set_exception(std::current_exception());
+						request.headersPromise.set_exception(std::current_exception());
+						request.bodyPromise.set_exception(std::current_exception());
+						hasError = true;
 					}
 
-					if (!_OpenConnection(request)) {
-						// Connecting failed
-						request.promise.set_value(std::move(request.response));
+					if (hasError) {
 						break;
 					}
 
 					// TODO: further serialization (?)
-					
+
 					request.requestStatus = Wrapper::kRequestConnected;
 					data->lock.Lock();
 					data->dataQueue.push_back(std::move(request));
@@ -269,9 +281,20 @@ BHttpSession::DataThreadFunc(void* arg)
 			} else if ((item.events & B_EVENT_READ) == B_EVENT_READ) {
 				std::cout << "Processing read for " << item.object << std::endl;
 				auto& request = data->connectionMap.find(item.object)->second;
-				auto finished = _RequestRead(request);
+				auto finished = false;
+				try {
+					finished = _RequestRead(request);
+					if (finished)
+						request.bodyPromise.set_value(std::move(request.body));
+				} catch (BError) {
+					if (request.requestStatus < Wrapper::kRequestStatusReceived)
+						request.statusPromise.set_exception(std::current_exception());
+					if (request.requestStatus < Wrapper::kRequestHeadersReceived)
+						request.headersPromise.set_exception(std::current_exception());
+					request.bodyPromise.set_exception(std::current_exception());
+					finished = true;
+				}
 				if (finished) {
-					request.promise.set_value(std::move(request.response));
 					request.socket->Disconnect();
 					data->connectionMap.erase(item.object);
 					resizeObjectList = true;
@@ -279,9 +302,15 @@ BHttpSession::DataThreadFunc(void* arg)
 			} else if ((item.events & B_EVENT_DISCONNECTED) == B_EVENT_DISCONNECTED) {
 				std::cout << "Unexpected disconnect for " << item.object << std::endl;
 				auto& request = data->connectionMap.find(item.object)->second;
-				request.response.status_code = 0;
-				request.response.error = BError(B_IO_ERROR, "Connection was closed unexpectedly");
-				request.promise.set_value(std::move(request.response));
+				try {
+					throw BError(B_IO_ERROR, "Connection was closed unexpectedly");
+				} catch (BError) {
+					if (request.requestStatus < Wrapper::kRequestStatusReceived)
+						request.statusPromise.set_exception(std::current_exception());
+					if (request.requestStatus < Wrapper::kRequestHeadersReceived)
+						request.headersPromise.set_exception(std::current_exception());
+					request.bodyPromise.set_exception(std::current_exception());
+				}
 				data->connectionMap.erase(item.object);
 				resizeObjectList = true;
 			} else {
@@ -311,7 +340,7 @@ BHttpSession::DataThreadFunc(void* arg)
 }
 
 
-/*static*/ bool
+/*static*/ void
 BHttpSession::_ResolveHostName(Wrapper& request)
 {
 	// This helper resolves the address for a given request
@@ -321,18 +350,12 @@ BHttpSession::_ResolveHostName(Wrapper& request)
 
 	// TODO: proxy
 	request.remoteAddress.SetTo(request.request.fUrl.Host(), port);
-	if (auto status = request.remoteAddress.InitCheck(); status != B_OK) {
-		request.response.status_code = 0;
-		request.response.error = BError(B_SERVER_NOT_FOUND, "Cannot resolve hostname");\
-		return false;
-	}
-
-	// TODO: inform any listeners, though maybe that is not the job of this helper?
-	return true;
+	if (auto status = request.remoteAddress.InitCheck(); status != B_OK)
+		throw BError(B_SERVER_NOT_FOUND, "Cannot resolve hostname");
 }
 
 
-/*static*/ bool
+/*static*/ void
 BHttpSession::_OpenConnection(Wrapper& request)
 {
 	// Set up the socket
@@ -347,9 +370,7 @@ BHttpSession::_OpenConnection(Wrapper& request)
 	// Open connection
 	if (auto status = socket->Connect(request.remoteAddress); status != B_OK) {
 		// TODO: inform listeners that the connection failed
-		request.response.status_code = 0;
-		request.response.error = BError(status, "Cannot connect to host");
-		return false;
+		throw BError(status, "Cannot connect to host");
 	}
 
 	// Make the rest of the interaction non-blocking
@@ -357,7 +378,6 @@ BHttpSession::_OpenConnection(Wrapper& request)
 
 	// TODO: inform the listeners that the connection was opened.
 	request.socket = std::move(socket);
-	return true;
 }
 
 /*static*/ std::string
@@ -474,9 +494,7 @@ BHttpSession::_RequestRead(Wrapper& request)
 		std::cout << "_RequestRead bytesRead: " << bytesRead << std::endl;
 
 		if (bytesRead < 0) {
-			request.response.status_code = 0;
-			request.response.error = BError(bytesRead, "Error reading data from host");
-			return true;
+			throw BError(bytesRead, "Error reading data from host");
 		} else if (bytesRead == 0) {
 			// Check if we got the expected number of bytes.
 			// Exceptions:
@@ -485,9 +503,7 @@ BHttpSession::_RequestRead(Wrapper& request)
 			// - If the request method is "HEAD" which explicitly asks the
 			//   server to not send any data (only the headers)
 			if (request.bytesTotal > 0 && request.bytesReceived != request.bytesTotal) {
-				request.response.status_code = 0;
-				request.response.error = BError(B_IO_ERROR, "Error reading data from host: unexpected end of data");
-				return true;
+				throw BError(B_IO_ERROR, "Error reading data from host: unexpected end of data");
 			}
 			request.receiveEnd = true;
 		}
@@ -500,24 +516,34 @@ BHttpSession::_RequestRead(Wrapper& request)
 	if (request.requestStatus < Wrapper::kRequestStatusReceived) {
 		_ParseStatus(request);
 
-		if (request.request.fOptFollowLocation
-			&& request.request.IsRedirectionStatusCode(request.response.status_code))
-				// do nothing for now, in the original code this disables the listener
-				;
+		if (request.status.code != 0) {
+			// the status headers are now received, decide what to do next
 
-		if (request.request.fOptStopOnError
-			&& request.response.status_code >= B_HTTP_STATUS_CLASS_CLIENT_ERROR)
+			if (request.request.fOptFollowLocation
+				&& request.request.IsRedirectionStatusCode(request.status.code))
+					// do nothing for now, in the original code this disables the listener
+					;
+
+			// TODO: move?
+			request.statusPromise.set_value(request.status);
+
+			if (request.request.fOptStopOnError
+				&& request.status.code >= B_HTTP_STATUS_CLASS_CLIENT_ERROR)
+			{
+				// at this stage, end the request and fulfill the (empty) headers promise
+				request.headersPromise.set_value(std::move(request.headers));
 				return true; // we will not continue anymore
-
-		// TODO: inform listeners of receiving the status code
+			}
+			// TODO: inform listeners of receiving the status code
+		}
 	}
 
 	if (request.requestStatus < Wrapper::kRequestHeadersReceived) {
 		_ParseHeaders(request);
 
 		if (request.requestStatus >= Wrapper::kRequestHeadersReceived) {
-			// TODO: move
-			request.response.headers = request.headers;
+			// TODO: move headers instead???
+			request.headersPromise.set_value(request.headers);
 
 			// TODO: Parse received cookies
 
@@ -541,9 +567,7 @@ BHttpSession::_RequestRead(Wrapper& request)
 						.CreateDecompressingOutputStream(&request.decompressorStorage,
 							NULL, stream);
 					if (result != B_OK) {
-						request.response.status_code = 0;
-						request.response.error = BError(result, "Could not create decompression stream");
-						return true;
+						throw BError(result, "Could not create decompression stream");
 					}
 					request.decompressingStream = std::unique_ptr<BDataIO>(stream);
 				}
@@ -561,7 +585,7 @@ BHttpSession::_RequestRead(Wrapper& request)
 			}
 
 			if (request.request.fRequestMethod == BHttpMethod::Head()
-				|| request.response.status_code == 204) {
+				|| request.status.code == 204) {
 				// In the case of a HEAD request or if the server replies
 				// 204 ("no content"), we don't expect to receive anything
 				// more, and the socket will be closed.
@@ -595,20 +619,18 @@ BHttpSession::_RequestRead(Wrapper& request)
 				auto status = request.decompressingStream->WriteExactly(
 					request.inputTempBuffer.data(), bytesRead);
 				if (status != B_OK) {
-					request.response.status_code = 0;
-					request.response.error = BError(status, "Error decompressing data");
-					return true;
+					throw BError(status, "Error decompressing data");
 				}
 				ssize_t size = request.decompressorStorage.Size();
 				BStackOrHeapArray<char, 4096> buffer(size);
 				size = request.decompressorStorage.Read(buffer, size);
 				if (size > 0) {
 					// TODO: support other output mechanisms
-					request.response.body.append(buffer, size);
+					request.body.append(buffer, size);
 					// TODO: notify listeners
 				}
 			} else {
-				request.response.body.append(request.inputTempBuffer.data(), bytesRead);
+				request.body.append(request.inputTempBuffer.data(), bytesRead);
 				// TODO: notify listener
 			}
 			
@@ -619,16 +641,14 @@ BHttpSession::_RequestRead(Wrapper& request)
 				auto status = request.decompressingStream->Flush();
 
 				if (status != B_OK && status != B_BUFFER_OVERFLOW) {
-					request.response.status_code = 0;
-					request.response.error = BError(status, "Error flushing decompression stream");
-					return true;
+					throw BError(status, "Error flushing decompression stream");
 				}
 
 				ssize_t size = request.decompressorStorage.Size();
 				BStackOrHeapArray<char, 4096> buffer(size);
 				size = request.decompressorStorage.Read(buffer, size);
 				if (size > 0) {
-					request.response.body.append(buffer, size);
+					request.body.append(buffer, size);
 					// TODO: notify listener
 				}
 			}
@@ -683,19 +703,17 @@ BHttpSession::_ParseStatus(Wrapper& request)
 
 	std::string statusCodeStr(statusLine.value(), 9, 3);
 	try {
-		request.response.status_code = std::stol(statusCodeStr);
+		request.status.code = std::stol(statusCodeStr);
 	} catch (std::invalid_argument) {
 		std::cout << "Error getting status code" << std::endl;
 		return;
 	}
 	
-	request.response.status_text = std::string(statusLine.value().begin() + 13, statusLine.value().end());
+	request.status.text = std::string(statusLine.value().begin() + 13, statusLine.value().end());
 
 	// TODO: EmitDebug
-	std::cout << "Status line received: Code " << request.response.status_code
-		<< " (" << request.response.status_text << ")" << std::endl;
-
-	request.requestStatus = Wrapper::kRequestStatusReceived;
+	std::cout << "Status line received: Code " << request.status.code
+		<< " (" << request.status.text << ")" << std::endl;
 }
 
 /*static*/ void

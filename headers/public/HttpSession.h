@@ -9,13 +9,15 @@
 #include <future>
 #include <memory>
 
+#include <Messenger.h>
+
 
 namespace BPrivate {
 
 namespace Network {
 
 class BHttpRequest;
-struct BHttpResponse;
+class BHttpResult;
 
 class BHttpSession {
 public:
@@ -38,7 +40,8 @@ public:
 	bool						HasCertificateException() { return false; }
 
 	// Requests
-	std::future<BHttpResponse>	AddRequest(BHttpRequest request);
+	BHttpResult					AddRequest(BHttpRequest request,
+									BMessenger observer = BMessenger());
 
 private:
 	struct Wrapper;
@@ -48,8 +51,8 @@ private:
 	static	status_t			DataThreadFunc(void* arg);
 
 	// Helper Functions
-	static	bool				_ResolveHostName(Wrapper& request);
-	static	bool				_OpenConnection(Wrapper& request);
+	static	void				_ResolveHostName(Wrapper& request);
+	static	void				_OpenConnection(Wrapper& request);
 	static	std::string			_CreateRequestHeaders(Wrapper& request);
 	static	bool				_RequestRead(Wrapper& request);
 	static	void				_ParseStatus(Wrapper& request);
