@@ -56,9 +56,11 @@ private:
 										std::future<std::string>&& body,
 										int32 id);
 	std::future<BHttpStatus>		fStatusFuture;
-	std::future<BHttpHeaders>		fHeaders;
-	std::future<std::string>		fBody;
+	std::future<BHttpHeaders>		fHeadersFuture;
+	std::future<std::string>		fBodyFuture;
 	std::optional<BHttpStatus>		fStatus;
+	std::optional<BHttpHeaders>		fHeaders;
+	std::optional<std::string>		fBody;
 	std::optional<BError>			fError;
 	int32							fID;
 };

@@ -50,7 +50,9 @@ void test_http_get_synchronous() {
 	auto status = result.Status();
 	if (status)
 		assert(status.value().get().code == 200);
-	//std::cout << response.body << std::endl;
+	assert(result.Body());
+	std::string& body = result.Body().value();
+	std::cout << body << std::endl;
 }
 
 
