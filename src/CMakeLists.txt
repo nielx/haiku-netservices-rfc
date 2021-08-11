@@ -6,6 +6,7 @@ add_library(netservices_rfc
 	HttpRequest.cpp
 	HttpResult.cpp
 	HttpSession.cpp
+	NetServices.cpp
 	NetworkRequest.cpp
 	UrlProtocolRoster.cpp
 	UrlRequest.cpp

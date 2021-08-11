@@ -59,8 +59,25 @@ private:
 	static	void				_ParseHeaders(Wrapper& request);
 };
 
+
+namespace UrlEvent {
+	enum {
+		HttpStatus = '_HST',
+		HttpHeaders = '_HHD',
+		CertificateError = '_CER'
+	};
 }
 
+
+namespace UrlEventData {
+	extern const char* HttpStatus;
+	extern const char* SSLCertificate;
+	extern const char* SSLMessage;
 }
+
+
+} // namespace Network
+
+} // namespace BPrivate
 
 #endif // _B_HTTP_SESSION

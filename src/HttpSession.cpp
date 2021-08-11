@@ -28,6 +28,13 @@
 using namespace BPrivate::Network;
 
 
+namespace BPrivate::Network::UrlEventData {
+	const char* HttpStatus = "url:httpstatus";
+	const char* SSLCertificate = "url:sslcertificate";
+	const char* SSLMessage = "url:sslmessage";
+}
+
+
 struct BHttpSession::Data {
 	// constants (does not need to be locked to be accessed)
 	thread_id							controlThread;
