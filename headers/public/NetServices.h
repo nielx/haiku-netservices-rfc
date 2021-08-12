@@ -36,6 +36,10 @@ namespace UrlEventData {
 }
 
 
+// Private helper to generate a unique identifier for a request
+int32 get_netservices_request_identifier();
+
+
 } // namespace Network
 
 } // namespace BPrivate

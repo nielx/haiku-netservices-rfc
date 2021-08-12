@@ -18,6 +18,7 @@
 #include <HttpResult.h>
 #include <HttpSession.h>
 #include <Locker.h>
+#include <NetServices.h>
 #include <NetworkAddress.h>
 #include <OS.h>
 #include <StackOrHeapArray.h>
@@ -63,11 +64,13 @@ struct BHttpSession::Wrapper {
 		kRequestContentReceived,
 		kRequestTrailingHeadersReceived
 	}				requestStatus = kRequestInitialState;
+
 	// Communication
 	BMessenger						observer;
 	std::promise<BHttpStatus>		statusPromise;
 	std::promise<BHttpHeaders>		headersPromise;
 	std::promise<std::string>		bodyPromise;
+	int32							identifier = get_netservices_request_identifier();
 
 	// Connection
 	BNetworkAddress					remoteAddress;
@@ -128,7 +131,7 @@ BHttpSession::AddRequest(BHttpRequest request, BMessenger observer)
 	auto headersFuture = wRequest.headersPromise.get_future();
 	auto bodyFuture = wRequest.bodyPromise.get_future();
 	auto retval = BHttpResult(std::move(statusFuture), std::move(headersFuture),
-		std::move(bodyFuture), 1);
+		std::move(bodyFuture), wRequest.identifier);
 	AutoLocker<BLocker>(fData->lock);
 	fData->controlQueue.push_back(std::move(wRequest));
 	release_sem(fData->controlQueueSem);
@@ -289,10 +292,12 @@ BHttpSession::DataThreadFunc(void* arg)
 				std::cout << "Processing read for " << item.object << std::endl;
 				auto& request = data->connectionMap.find(item.object)->second;
 				auto finished = false;
+				auto success = false;
 				try {
 					finished = _RequestRead(request);
 					if (finished)
 						request.bodyPromise.set_value(std::move(request.body));
+					success = true;
 				} catch (BError) {
 					if (request.requestStatus < Wrapper::kRequestStatusReceived)
 						request.statusPromise.set_exception(std::current_exception());
@@ -303,6 +308,12 @@ BHttpSession::DataThreadFunc(void* arg)
 				}
 				if (finished) {
 					request.socket->Disconnect();
+					if (request.observer.IsValid()) {
+						BMessage msg(UrlEvent::RequestCompleted);
+						msg.AddInt32(UrlEventData::Id, request.identifier);
+						msg.AddBool(UrlEventData::Success, success);
+						request.observer.SendMessage(&msg);
+					}
 					data->connectionMap.erase(item.object);
 					resizeObjectList = true;
 				}

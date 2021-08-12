@@ -111,6 +111,13 @@ BHttpResult::IsCompleted()
 }
 
 
+int32
+BHttpResult::Identity()
+{
+	return fID;
+}
+
+
 } // namespace Network
 
 } // namespace BPrivate
