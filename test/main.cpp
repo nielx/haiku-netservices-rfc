@@ -9,16 +9,12 @@
 #include <NetServices.h>
 #include <SupportDefs.h>
 #include <Url.h>
-#include <UrlProtocolRoster.h>
-#include <UrlRequest.h>
 
 #include <Expected.h>
 
 using BPrivate::Network::BHttpRequest;
 using BPrivate::Network::BHttpSession;
 using BPrivate::Network::BHttpResult;
-using BPrivate::Network::BUrlProtocolRoster;
-using BPrivate::Network::BUrlRequest;
 
 
 void test_expected() {

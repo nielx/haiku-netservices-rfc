@@ -18,6 +18,7 @@
 #include <HttpResult.h>
 #include <HttpSession.h>
 #include <Locker.h>
+#include <NetBuffer.h>
 #include <NetServices.h>
 #include <NetworkAddress.h>
 #include <OS.h>

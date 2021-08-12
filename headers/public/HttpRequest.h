@@ -10,8 +10,7 @@
 #include <ErrorsExt.h>
 #include <HttpHeaders.h>
 #include <HttpMethod.h>
-#include <NetworkRequest.h>
-
+#include <Url.h>
 
 namespace BPrivate {
 

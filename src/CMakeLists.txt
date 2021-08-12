@@ -7,10 +7,6 @@ add_library(netservices_rfc
 	HttpResult.cpp
 	HttpSession.cpp
 	NetServices.cpp
-	NetworkRequest.cpp
-	UrlProtocolRoster.cpp
-	UrlRequest.cpp
-	UrlResult.cpp
 )
 
 target_include_directories(netservices_rfc PUBLIC
