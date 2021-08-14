@@ -302,12 +302,12 @@ BHttpSession::DataThreadFunc(void* arg)
 		}
 
 		// Process all objects that are ready
-		// TODO: good implementation, this is the stupid implementation.
 		bool resizeObjectList = false;
 		for(auto& item: data->objectList) {
 			if (item.type != B_OBJECT_TYPE_FD)
 				continue;
 			if ((item.events & B_EVENT_WRITE) == B_EVENT_WRITE) {
+				// TODO: this is currently not fully in line with non-blocking IO
 				std::cout << "> Processing write for " << item.object << std::endl;
 				auto& request = data->connectionMap.find(item.object)->second;
 				switch (request.requestStatus) {
@@ -325,7 +325,7 @@ BHttpSession::DataThreadFunc(void* arg)
 						throw std::runtime_error("Write status for object that is in the wrong state");
 				}
 			} else if ((item.events & B_EVENT_READ) == B_EVENT_READ) {
-				std::cout << "Processing read for " << item.object << std::endl;
+				std::cout << "Processing read for " << item.object << std::endl;	
 				auto& request = data->connectionMap.find(item.object)->second;
 				auto finished = false;
 				auto success = false;
@@ -338,7 +338,14 @@ BHttpSession::DataThreadFunc(void* arg)
 					request.result->SetError(e);
 					finished = true;
 				}
-				if (finished) {
+
+				if (request.result->CanCancel()) {
+					std::cout << "Canceling request because no one is listening" << std::endl;
+					// This could be done earlier, but this seems cleaner for the flow
+					request.socket->Disconnect();
+					data->connectionMap.erase(item.object);
+					resizeObjectList = true;
+				} else if (finished) {
 					request.socket->Disconnect();
 					if (request.observer.IsValid()) {
 						BMessage msg(UrlEvent::RequestCompleted);
