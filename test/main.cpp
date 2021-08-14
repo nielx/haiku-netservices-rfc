@@ -99,11 +99,31 @@ test_http_get_asynchronous(BHttpSession &session)
 }
 
 
+void
+test_http_cancel(BHttpSession &session)
+{
+	auto url = BUrl("https://speed.hetzner.de/100MB.bin");
+	assert(url.IsValid());
+	auto request = BHttpRequest::Get(url);
+	assert(request);
+
+	auto result = session.AddRequest(std::move(request.value()));
+	// get the status before we cancel
+	auto status = result.Status();
+	if (status)
+		assert(status.value().get().code == 200);
+	session.Cancel(result);
+	assert(!result.Body());
+	assert(result.Body().error().Code() == B_CANCELED);
+}
+
+
 int
 main(int argc, char** argv) {
 	test_expected();
 	auto session = BHttpSession();
 	test_http_get_synchronous(session);
 	test_http_get_asynchronous(session);
+	test_http_cancel(session);
 	return 0;
 }

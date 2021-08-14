@@ -47,7 +47,7 @@ public:
 	bool							IsCompleted();
 
 	// Identity
-	int32							Identity();
+	int32							Identity() const;
 
 private:
 	friend class BHttpSession;

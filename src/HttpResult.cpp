@@ -109,7 +109,7 @@ BHttpResult::IsCompleted()
 
 
 int32
-BHttpResult::Identity()
+BHttpResult::Identity() const
 {
 	return fData->id;
 }

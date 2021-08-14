@@ -46,9 +46,10 @@ struct BHttpSession::Data {
 	sem_id								dataQueueSem;
 	// locking mechanism
 	BLocker								lock;
-	// control queue
+	// queues
 	std::deque<BHttpSession::Wrapper>	controlQueue;
 	std::deque<BHttpSession::Wrapper>	dataQueue;
+	std::vector<int32>					cancelList;
 	// data owned by the dataThread
 	std::map<int,BHttpSession::Wrapper>	connectionMap;
 	std::vector<object_wait_info>		objectList;
@@ -139,6 +140,22 @@ BHttpSession::AddRequest(BHttpRequest request, BMessenger observer)
 }
 
 
+void
+BHttpSession::Cancel(int32 identifier)
+{
+	AutoLocker<BLocker>(fData->lock);
+	fData->cancelList.push_back(identifier);
+	release_sem(fData->dataQueueSem);
+}
+
+
+void
+BHttpSession::Cancel(const BHttpResult& result)
+{
+	Cancel(result.Identity());
+}
+
+
 static void
 SetSocketNonBlocking(int socket)
 {
@@ -214,6 +231,9 @@ BHttpSession::ControlThreadFunc(void* arg)
 }
 
 
+static const uint16 EVENT_CANCELLED = 0x4000;
+
+
 /*static*/ status_t
 BHttpSession::DataThreadFunc(void* arg)
 {
@@ -243,7 +263,9 @@ BHttpSession::DataThreadFunc(void* arg)
 				break;
 			}
 
-			// Move requests from the dataQueue to our internal request admin
+			// Process the cancelList and dataQueue. Note that there might
+			// be a situation where a request is cancelled and added in the
+			// same iteration, but that is taken care by this algorithm.
 			data->lock.Lock();
 			while (!data->dataQueue.empty()) {
 				auto request = std::move(data->dataQueue.front());
@@ -257,6 +279,22 @@ BHttpSession::DataThreadFunc(void* arg)
 					B_OBJECT_TYPE_FD, B_EVENT_WRITE
 				});
 			}
+		
+			for (auto id: data->cancelList) {
+				// To cancel, we set a special event status on the
+				// object_wait_info list so that we can handle it below.
+				// Also: the first item in the waitlist is always the semaphore
+				// so the fun starts at offset 1.
+				size_t offset = 0;
+				for (auto it = data->connectionMap.cbegin(); it != data->connectionMap.cend(); it++) {
+					offset++;
+					if (it->second.result->id == id) {
+						data->objectList[offset].events = EVENT_CANCELLED;
+						break;
+					}
+				}
+			}
+			data->cancelList.clear();
 			data->lock.Unlock();
 		} else if ((data->objectList[0].events & B_EVENT_INVALID) == B_EVENT_INVALID) {
 			// The semaphore has been deleted. Start the cleanup
@@ -314,10 +352,25 @@ BHttpSession::DataThreadFunc(void* arg)
 			} else if ((item.events & B_EVENT_DISCONNECTED) == B_EVENT_DISCONNECTED) {
 				std::cout << "Unexpected disconnect for " << item.object << std::endl;
 				auto& request = data->connectionMap.find(item.object)->second;
-				try {
-					throw BError(B_IO_ERROR, "Connection was closed unexpectedly");
-				} catch (BError &e) {
-					request.result->SetError(e);
+				request.result->SetError(BError(B_IO_ERROR, "Connection was closed unexpectedly"));
+				if (request.observer.IsValid()) {
+					BMessage msg(UrlEvent::RequestCompleted);
+					msg.AddInt32(UrlEventData::Id, request.result->id);
+					msg.AddBool(UrlEventData::Success, false);
+					request.observer.SendMessage(&msg);
+				}
+				data->connectionMap.erase(item.object);
+				resizeObjectList = true;
+			} else if ((item.events & EVENT_CANCELLED) == EVENT_CANCELLED) {
+				std::cout << "Cancel request for " << item.object << std::endl;
+				auto& request = data->connectionMap.find(item.object)->second;
+				request.socket->Disconnect();
+				request.result->SetError(BError(B_CANCELED, "Request cancelled by user"));
+				if (request.observer.IsValid()) {
+					BMessage msg(UrlEvent::RequestCompleted);
+					msg.AddInt32(UrlEventData::Id, request.result->id);
+					msg.AddBool(UrlEventData::Success, false);
+					request.observer.SendMessage(&msg);
 				}
 				data->connectionMap.erase(item.object);
 				resizeObjectList = true;

@@ -42,7 +42,8 @@ public:
 	// Requests
 	BHttpResult					AddRequest(BHttpRequest request,
 									BMessenger observer = BMessenger());
-
+	void						Cancel(int32 identifier);
+	void						Cancel(const BHttpResult& result);
 private:
 	struct Wrapper;
 	struct Data;
