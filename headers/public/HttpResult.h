@@ -2,13 +2,12 @@
  * Copyright 2021 Haiku Inc. All rights reserved.
  * Distributed under the terms of the MIT License.
  */
-#ifndef _B_HTTP_TASK_H_
-#define _B_HTTP_TASK_H_
+
+#ifndef _B_HTTP_RESULT_H_
+#define _B_HTTP_RESULT_H_
 
 
 #include <functional>
-#include <future>
-#include <optional>
 
 #include <ErrorsExt.h>
 #include <Expected.h>
@@ -21,6 +20,7 @@ namespace Network {
 
 class BHttpSession;
 class BHttpHeaders;
+struct HttpResultPrivate;
 
 
 struct BHttpStatus {
@@ -51,18 +51,8 @@ public:
 
 private:
 	friend class BHttpSession;
-									BHttpResult(std::future<BHttpStatus>&& status,
-										std::future<BHttpHeaders>&& headers,
-										std::future<std::string>&& body,
-										int32 id);
-	std::future<BHttpStatus>		fStatusFuture;
-	std::future<BHttpHeaders>		fHeadersFuture;
-	std::future<std::string>		fBodyFuture;
-	std::optional<BHttpStatus>		fStatus;
-	std::optional<BHttpHeaders>		fHeaders;
-	std::optional<std::string>		fBody;
-	std::optional<BError>			fError;
-	int32							fID;
+									BHttpResult(std::shared_ptr<HttpResultPrivate> data);
+	std::shared_ptr<HttpResultPrivate>	fData;
 };
 
 
@@ -70,4 +60,4 @@ private:
 
 } // namespace BPrivate
 
-#endif // _B_HTTP_TASK_H_
+#endif // _B_HTTP_Result_H_

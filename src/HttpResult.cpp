@@ -10,6 +10,8 @@
 #include <HttpHeaders.h>
 #include <HttpResult.h>
 
+#include "HttpResultPrivate.h"
+
 
 namespace BPrivate {
 
@@ -17,10 +19,8 @@ namespace Network {
 
 
 /*private*/
-BHttpResult::BHttpResult(std::future<BHttpStatus>&& status,
-	std::future<BHttpHeaders>&& headers, std::future<std::string>&& body,
-	int32 id)
-	: fStatusFuture(std::move(status)), fHeadersFuture(std::move(headers)), fBodyFuture(std::move(body)), fID(id)
+BHttpResult::BHttpResult(std::shared_ptr<HttpResultPrivate> data)
+	: fData(data)
 {
 	
 }
@@ -29,92 +29,89 @@ BHttpResult::BHttpResult(std::future<BHttpStatus>&& status,
 Expected<BHttpResult::StatusRef, BError>
 BHttpResult::Status()
 {
-	if (fError)
-		return Unexpected<BError>(*fError);
-	else if (fStatus)
-		return std::ref(*fStatus);
-	try {
-		fStatus = fStatusFuture.get();
-		return std::ref(*fStatus);
-	} catch (BError &e) {
-		fError = e;
-		return Unexpected<BError>(e);
-	}		
+	status_t status = B_OK;
+	while (status == B_INTERRUPTED || status == B_OK) {
+		auto dataStatus = fData->GetStatusAtomic();
+		if (dataStatus == HttpResultPrivate::kError)
+			return Unexpected<BError>(*(fData->error));
+
+		if (dataStatus >= HttpResultPrivate::kStatusReady)
+			return std::ref(*(fData->status));
+		
+		status = acquire_sem(fData->data_wait);
+	}
+	throw std::runtime_error("Unexpected error waiting for status!");
 }
 
 
 Expected<BHttpResult::HeadersRef, BError>
 BHttpResult::Headers()
 {
-	if (fError)
-		return Unexpected<BError>(*fError);
-	else if (fHeaders)
-		return std::ref(*fHeaders);
-	try {
-		fHeaders = fHeadersFuture.get();
-		return std::ref(*fHeaders);
-	} catch (BError &e) {
-		fError = e;
-		return Unexpected<BError>(e);
+	status_t status = B_OK;
+	while (status == B_INTERRUPTED || status == B_OK) {
+		auto dataStatus = fData->GetStatusAtomic();
+		if (dataStatus == HttpResultPrivate::kError)
+			return Unexpected<BError>(*(fData->error));
+
+		if (dataStatus >= HttpResultPrivate::kHeadersReady)
+			return std::ref(*(fData->headers));
+		
+		status = acquire_sem(fData->data_wait);
 	}
+	throw std::runtime_error("Unexpected error waiting for headers!");
 }
 
 
 Expected<BHttpResult::BodyRef, BError>
 BHttpResult::Body()
 {
-	if (fError)
-		return Unexpected<BError>(*fError);
-	else if (fBody)
-		return std::ref(*fBody);
-	try {
-		fBody = fBodyFuture.get();
-		return std::ref(*fBody);
-	} catch (BError &e) {
-		fError = e;
-		return Unexpected<BError>(e);
+	status_t status = B_OK;
+	while (status == B_INTERRUPTED || status == B_OK) {
+		auto dataStatus = fData->GetStatusAtomic();
+		if (dataStatus == HttpResultPrivate::kError)
+			return Unexpected<BError>(*(fData->error));
+
+		if (dataStatus >= HttpResultPrivate::kBodyReady)
+			return std::ref(*(fData->body));
+		
+		status = acquire_sem(fData->data_wait);
 	}
+	throw std::runtime_error("Unexpected error waiting for body!");
 }
 
 
 bool
 BHttpResult::HasStatus()
 {
-	if (fStatus)
-		return true;
-	return fStatusFuture.wait_for(std::chrono::nanoseconds::zero()) != std::future_status::timeout;
+	return fData->GetStatusAtomic() >= HttpResultPrivate::kStatusReady;
 }
 
 
 bool
 BHttpResult::HasHeaders()
 {
-	if (fHeaders)
-		return true;
-	return fHeadersFuture.wait_for(std::chrono::nanoseconds::zero()) != std::future_status::timeout;
+	return fData->GetStatusAtomic() >= HttpResultPrivate::kHeadersReady;
 }
 
 
 bool
 BHttpResult::HasBody()
 {
-	if (fBody)
-		return true;
-	return fBodyFuture.wait_for(std::chrono::nanoseconds::zero()) != std::future_status::timeout;
+	return fData->GetStatusAtomic() >= HttpResultPrivate::kBodyReady;
 }
 
 
 bool
 BHttpResult::IsCompleted()
 {
-	return HasStatus() && HasHeaders() && HasBody();
+	return HasBody();
 }
 
 
 int32
 BHttpResult::Identity()
 {
-	return fID;
+	return fData->id;
 }
 
 

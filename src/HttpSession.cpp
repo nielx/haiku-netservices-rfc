@@ -26,6 +26,7 @@
 #include <ZlibCompressionAlgorithm.h>
 
 #include "AutoLocker.h"
+#include "HttpResultPrivate.h"
 
 using namespace BPrivate::Network;
 
@@ -68,10 +69,7 @@ struct BHttpSession::Wrapper {
 
 	// Communication
 	BMessenger						observer;
-	std::promise<BHttpStatus>		statusPromise;
-	std::promise<BHttpHeaders>		headersPromise;
-	std::promise<std::string>		bodyPromise;
-	int32							identifier = get_netservices_request_identifier();
+	std::shared_ptr<HttpResultPrivate> result;
 
 	// Connection
 	BNetworkAddress					remoteAddress;
@@ -128,11 +126,12 @@ BHttpSession::AddRequest(BHttpRequest request, BMessenger observer)
 {
 	BHttpSession::Wrapper wRequest{std::move(request)};
 	wRequest.observer = observer;
-	auto statusFuture = wRequest.statusPromise.get_future();
-	auto headersFuture = wRequest.headersPromise.get_future();
-	auto bodyFuture = wRequest.bodyPromise.get_future();
-	auto retval = BHttpResult(std::move(statusFuture), std::move(headersFuture),
-		std::move(bodyFuture), wRequest.identifier);
+	auto identifier = get_netservices_request_identifier();
+
+	// create shared data
+	wRequest.result = std::make_shared<HttpResultPrivate>(identifier);
+
+	auto retval = BHttpResult(wRequest.result);
 	AutoLocker<BLocker>(fData->lock);
 	fData->controlQueue.push_back(std::move(wRequest));
 	release_sem(fData->controlQueueSem);
@@ -185,10 +184,8 @@ BHttpSession::ControlThreadFunc(void* arg)
 					try {
 						_ResolveHostName(request);
 						_OpenConnection(request);
-					} catch (BError) {
-						request.statusPromise.set_exception(std::current_exception());
-						request.headersPromise.set_exception(std::current_exception());
-						request.bodyPromise.set_exception(std::current_exception());
+					} catch (BError &e) {
+						request.result->SetError(e);
 						hasError = true;
 					}
 
@@ -297,21 +294,17 @@ BHttpSession::DataThreadFunc(void* arg)
 				try {
 					finished = _RequestRead(request);
 					if (finished)
-						request.bodyPromise.set_value(std::move(request.body));
+						request.result->SetBody(std::move(request.body));
 					success = true;
-				} catch (BError) {
-					if (request.requestStatus < Wrapper::kRequestStatusReceived)
-						request.statusPromise.set_exception(std::current_exception());
-					if (request.requestStatus < Wrapper::kRequestHeadersReceived)
-						request.headersPromise.set_exception(std::current_exception());
-					request.bodyPromise.set_exception(std::current_exception());
+				} catch (BError &e) {
+					request.result->SetError(e);
 					finished = true;
 				}
 				if (finished) {
 					request.socket->Disconnect();
 					if (request.observer.IsValid()) {
 						BMessage msg(UrlEvent::RequestCompleted);
-						msg.AddInt32(UrlEventData::Id, request.identifier);
+						msg.AddInt32(UrlEventData::Id, request.result->id);
 						msg.AddBool(UrlEventData::Success, success);
 						request.observer.SendMessage(&msg);
 					}
@@ -323,12 +316,8 @@ BHttpSession::DataThreadFunc(void* arg)
 				auto& request = data->connectionMap.find(item.object)->second;
 				try {
 					throw BError(B_IO_ERROR, "Connection was closed unexpectedly");
-				} catch (BError) {
-					if (request.requestStatus < Wrapper::kRequestStatusReceived)
-						request.statusPromise.set_exception(std::current_exception());
-					if (request.requestStatus < Wrapper::kRequestHeadersReceived)
-						request.headersPromise.set_exception(std::current_exception());
-					request.bodyPromise.set_exception(std::current_exception());
+				} catch (BError &e) {
+					request.result->SetError(e);
 				}
 				data->connectionMap.erase(item.object);
 				resizeObjectList = true;
@@ -544,13 +533,11 @@ BHttpSession::_RequestRead(Wrapper& request)
 					;
 
 			// TODO: move?
-			request.statusPromise.set_value(request.status);
+			request.result->SetStatus(BHttpStatus(request.status));
 
 			if (request.request.fOptStopOnError
 				&& request.status.code >= B_HTTP_STATUS_CLASS_CLIENT_ERROR)
 			{
-				// at this stage, end the request and fulfill the (empty) headers promise
-				request.headersPromise.set_value(std::move(request.headers));
 				return true; // we will not continue anymore
 			}
 			// TODO: inform listeners of receiving the status code
@@ -562,7 +549,7 @@ BHttpSession::_RequestRead(Wrapper& request)
 
 		if (request.requestStatus >= Wrapper::kRequestHeadersReceived) {
 			// TODO: move headers instead???
-			request.headersPromise.set_value(request.headers);
+			request.result->SetHeaders(BHttpHeaders(request.headers));
 
 			// TODO: Parse received cookies
 
