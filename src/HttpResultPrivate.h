@@ -21,7 +21,7 @@ struct HttpResultPrivate {
 	// Read-only properties (multi-thread safe)
 	const	int32						id;
 
-	// Locking
+	// Locking and atomic variables
 			sem_id						data_wait;
 			enum {
 				kNoData = 0,
@@ -31,6 +31,7 @@ struct HttpResultPrivate {
 				kError
 			};
 			int32						requestStatus = kNoData;
+			int32						canCancel = 0;
 
 	// Data
 			std::optional<BHttpStatus>	status;
@@ -41,6 +42,8 @@ struct HttpResultPrivate {
 	// Utility functions
 										HttpResultPrivate(int32 identifier);
 			int32						GetStatusAtomic();
+			bool						CanCancel();
+			void						SetCancel();
 			void						SetError(const BError& e);
 			void						SetStatus(BHttpStatus&& s);
 			void						SetHeaders(BHttpHeaders&& h);
@@ -63,6 +66,20 @@ inline int32
 HttpResultPrivate::GetStatusAtomic()
 {
 	return atomic_get(&requestStatus);
+}
+
+
+inline bool
+HttpResultPrivate::CanCancel()
+{
+	return atomic_get(&canCancel) == 1;
+}
+
+
+inline void
+HttpResultPrivate::SetCancel()
+{
+	atomic_set(&canCancel, 1);
 }
 
 

@@ -49,6 +49,12 @@ public:
 	// Identity
 	int32							Identity() const;
 
+	// Destructor, copy and move
+									~BHttpResult();
+									BHttpResult(const BHttpResult& other) = delete;
+									BHttpResult(BHttpResult&& other) = default;
+	BHttpResult&					operator=(const BHttpResult& other) = delete;
+	BHttpResult&					operator=(BHttpResult&& other) = default;
 private:
 	friend class BHttpSession;
 									BHttpResult(std::shared_ptr<HttpResultPrivate> data);

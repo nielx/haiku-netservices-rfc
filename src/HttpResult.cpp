@@ -26,9 +26,18 @@ BHttpResult::BHttpResult(std::shared_ptr<HttpResultPrivate> data)
 }
 
 
+BHttpResult::~BHttpResult()
+{
+	if (fData)
+		fData->SetCancel();
+}
+
+
 Expected<BHttpResult::StatusRef, BError>
 BHttpResult::Status()
 {
+	if (!fData)
+		throw std::runtime_error("The BHttpResult object is no longer valid");
 	status_t status = B_OK;
 	while (status == B_INTERRUPTED || status == B_OK) {
 		auto dataStatus = fData->GetStatusAtomic();
@@ -47,6 +56,8 @@ BHttpResult::Status()
 Expected<BHttpResult::HeadersRef, BError>
 BHttpResult::Headers()
 {
+	if (!fData)
+		throw std::runtime_error("The BHttpResult object is no longer valid");
 	status_t status = B_OK;
 	while (status == B_INTERRUPTED || status == B_OK) {
 		auto dataStatus = fData->GetStatusAtomic();
@@ -65,6 +76,8 @@ BHttpResult::Headers()
 Expected<BHttpResult::BodyRef, BError>
 BHttpResult::Body()
 {
+	if (!fData)
+		throw std::runtime_error("The BHttpResult object is no longer valid");
 	status_t status = B_OK;
 	while (status == B_INTERRUPTED || status == B_OK) {
 		auto dataStatus = fData->GetStatusAtomic();
@@ -83,6 +96,8 @@ BHttpResult::Body()
 bool
 BHttpResult::HasStatus()
 {
+	if (!fData)
+		throw std::runtime_error("The BHttpResult object is no longer valid");
 	return fData->GetStatusAtomic() >= HttpResultPrivate::kStatusReady;
 }
 
@@ -90,6 +105,8 @@ BHttpResult::HasStatus()
 bool
 BHttpResult::HasHeaders()
 {
+	if (!fData)
+		throw std::runtime_error("The BHttpResult object is no longer valid");
 	return fData->GetStatusAtomic() >= HttpResultPrivate::kHeadersReady;
 }
 
@@ -97,6 +114,8 @@ BHttpResult::HasHeaders()
 bool
 BHttpResult::HasBody()
 {
+	if (!fData)
+		throw std::runtime_error("The BHttpResult object is no longer valid");
 	return fData->GetStatusAtomic() >= HttpResultPrivate::kBodyReady;
 }
 
@@ -104,6 +123,8 @@ BHttpResult::HasBody()
 bool
 BHttpResult::IsCompleted()
 {
+	if (!fData)
+		throw std::runtime_error("The BHttpResult object is no longer valid");
 	return HasBody();
 }
 
@@ -111,6 +132,8 @@ BHttpResult::IsCompleted()
 int32
 BHttpResult::Identity() const
 {
+	if (!fData)
+		throw std::runtime_error("The BHttpResult object is no longer valid");
 	return fData->id;
 }
 
