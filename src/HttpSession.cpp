@@ -90,8 +90,6 @@ struct BHttpSession::Wrapper {
 	std::unique_ptr<BDataIO>		decompressingStream = nullptr;
 	std::vector<char>				inputTempBuffer = std::vector<char>(4096);
 	BHttpStatus						status;
-	std::string						body;
-		// TODO: is this the best way of allocating this temp buffer?
 	// TODO: reset method to reset Connection and Receive State when redirected
 };
 
@@ -123,7 +121,8 @@ BHttpSession::BHttpSession()
 
 
 BHttpResult
-BHttpSession::AddRequest(BHttpRequest request, BMessenger observer)
+BHttpSession::AddRequest(BHttpRequest request, std::unique_ptr<BDataIO> target,
+	BMessenger observer)
 {
 	BHttpSession::Wrapper wRequest{std::move(request)};
 	wRequest.observer = observer;
@@ -131,6 +130,7 @@ BHttpSession::AddRequest(BHttpRequest request, BMessenger observer)
 
 	// create shared data
 	wRequest.result = std::make_shared<HttpResultPrivate>(identifier);
+	wRequest.result->owned_body = std::move(target);
 
 	auto retval = BHttpResult(wRequest.result);
 	AutoLocker<BLocker>(fData->lock);
@@ -332,7 +332,7 @@ BHttpSession::DataThreadFunc(void* arg)
 				try {
 					finished = _RequestRead(request);
 					if (finished)
-						request.result->SetBody(std::move(request.body));
+						request.result->SetBody();
 					success = true;
 				} catch (BError &e) {
 					request.result->SetError(e);
@@ -691,12 +691,15 @@ BHttpSession::_RequestRead(Wrapper& request)
 				BStackOrHeapArray<char, 4096> buffer(size);
 				size = request.decompressorStorage.Read(buffer, size);
 				if (size > 0) {
-					// TODO: support other output mechanisms
-					request.body.append(buffer, size);
+					// TODO: handle the situation where the buffer can write less
+					// than is available.
+					request.result->WriteToBody(buffer, size);
 					// TODO: notify listeners
 				}
 			} else {
-				request.body.append(request.inputTempBuffer.data(), bytesRead);
+				// TODO: handle the situation where the buffer can write less
+				// than is available.
+				request.result->WriteToBody(request.inputTempBuffer.data(), bytesRead);
 				// TODO: notify listener
 			}
 			
@@ -714,7 +717,9 @@ BHttpSession::_RequestRead(Wrapper& request)
 				BStackOrHeapArray<char, 4096> buffer(size);
 				size = request.decompressorStorage.Read(buffer, size);
 				if (size > 0) {
-					request.body.append(buffer, size);
+					// TODO: handle the situation where the buffer can write less
+					// than is available.
+					request.result->WriteToBody(buffer, size);
 					// TODO: notify listener
 				}
 			}

@@ -41,6 +41,7 @@ public:
 
 	// Requests
 	BHttpResult					AddRequest(BHttpRequest request,
+									std::unique_ptr<BDataIO> target = nullptr,
 									BMessenger observer = BMessenger());
 	void						Cancel(int32 identifier);
 	void						Cancel(const BHttpResult& result);

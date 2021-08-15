@@ -29,11 +29,17 @@ struct BHttpStatus {
 };
 
 
+struct BHttpBody {
+	std::unique_ptr<BDataIO>	target = nullptr;
+	std::string					text;
+};
+
+
 class BHttpResult {
 public:
 	typedef std::reference_wrapper<BHttpStatus> StatusRef;
 	typedef std::reference_wrapper<BHttpHeaders> HeadersRef;
-	typedef std::reference_wrapper<std::string> BodyRef;
+	typedef std::reference_wrapper<BHttpBody> BodyRef;
 
 	// Blocking Access Functions
 	Expected<StatusRef, BError>		Status();

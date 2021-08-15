@@ -36,8 +36,13 @@ struct HttpResultPrivate {
 	// Data
 			std::optional<BHttpStatus>	status;
 			std::optional<BHttpHeaders>	headers;
-			std::optional<std::string>	body;
+			std::optional<BHttpBody>	body;
 			std::optional<BError>		error;
+
+	// Body storage
+			std::unique_ptr<BDataIO>	owned_body = nullptr;
+	//		std::shared_ptr<BMemoryRingIO>	shared_body = nullptr;
+			std::string					body_text;
 
 	// Utility functions
 										HttpResultPrivate(int32 identifier);
@@ -47,7 +52,8 @@ struct HttpResultPrivate {
 			void						SetError(const BError& e);
 			void						SetStatus(BHttpStatus&& s);
 			void						SetHeaders(BHttpHeaders&& h);
-			void						SetBody(std::string&& b);
+			void						SetBody();
+			ssize_t						WriteToBody(const void* buffer, ssize_t size);
 };
 
 
@@ -111,11 +117,24 @@ HttpResultPrivate::SetHeaders(BHttpHeaders&& h)
 
 
 inline void
-HttpResultPrivate::SetBody(std::string&& b)
+HttpResultPrivate::SetBody()
 {
-	body = std::move(b);
+	body = BHttpBody{std::move(owned_body), std::move(body_text)};
 	atomic_set(&requestStatus, kBodyReady);
 	release_sem(data_wait);
+}
+
+
+inline ssize_t
+HttpResultPrivate::WriteToBody(const void* buffer, ssize_t size)
+{
+	// TODO: when the support for a shared BMemoryRingIO is here, choose
+	// between one or the other depending on which one is available.
+	if (owned_body == nullptr) {
+		body_text.append(static_cast<const char*>(buffer), size);
+		return size;
+	}
+	return owned_body->Write(buffer, size);
 }
 
 

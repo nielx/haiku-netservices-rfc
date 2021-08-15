@@ -49,8 +49,8 @@ void test_http_get_synchronous(BHttpSession session) {
 	if (status)
 		assert(status.value().get().code == 200);
 	assert(result.Body());
-	std::string& body = result.Body().value();
-	std::cout << body << std::endl;
+	// validate that there is a string body
+	assert(result.Body().value().get().text.size() > 0);
 }
 
 
@@ -64,7 +64,7 @@ public:
 		assert(url.IsValid());
 		auto request = BHttpRequest::Get(url);
 		assert(request);
-		fResult = fSession.AddRequest(std::move(request.value()), BMessenger(this));
+		fResult = fSession.AddRequest(std::move(request.value()), nullptr, BMessenger(this));
 	}
 
 	void MessageReceived(BMessage *msg)
