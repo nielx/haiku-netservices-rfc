@@ -53,6 +53,30 @@ struct BHttpSession::Data {
 	// data owned by the dataThread
 	std::map<int,BHttpSession::Wrapper>	connectionMap;
 	std::vector<object_wait_info>		objectList;
+
+	// Constructor
+	Data(thread_func ControlFunc, thread_func DataFunc) {
+		// set up semaphores for synchronization between data and control thread
+		controlQueueSem = create_sem(0, "http:control");
+		if (controlQueueSem < 0)
+			throw std::runtime_error("Cannot create control queue semaphore");
+		dataQueueSem = create_sem(0, "http:data");
+		if (dataQueueSem < 0)
+			throw std::runtime_error("Cannot create data queue semaphore");
+
+		// set up internal threads
+		controlThread = spawn_thread(ControlFunc, "http:control", B_NORMAL_PRIORITY, this);
+		if (controlThread < 0)
+			throw std::runtime_error("Cannot create control thread");
+		if (resume_thread(controlThread) != B_OK)
+			throw std::runtime_error("Cannot resume control thread");
+
+		dataThread = spawn_thread(DataFunc, "http:data", B_NORMAL_PRIORITY, this);
+		if (dataThread < 0)
+			throw std::runtime_error("Cannot create data thread");
+		if (resume_thread(dataThread) != B_OK)
+			throw std::runtime_error("Cannot resume data thread");
+	}
 };
 
 
@@ -95,28 +119,8 @@ struct BHttpSession::Wrapper {
 
 
 BHttpSession::BHttpSession()
-	: fData(std::make_shared<Data>())
+	: fData(std::make_shared<Data>(ControlThreadFunc, DataThreadFunc))
 {
-	// set up semaphores for synchronization between data and control thread
-	fData->controlQueueSem = create_sem(0, "http:control");
-	if (fData->controlQueueSem < 0)
-		throw std::runtime_error("Cannot create control queue semaphore");
-	fData->dataQueueSem = create_sem(0, "http:data");
-	if (fData->dataQueueSem < 0)
-		throw std::runtime_error("Cannot create data queue semaphore");
-	
-	// set up internal threads
-	fData->controlThread = spawn_thread(ControlThreadFunc, "http:control", B_NORMAL_PRIORITY, fData.get());
-	if (fData->controlThread < 0)
-		throw std::runtime_error("Cannot create control thread");
-	if (resume_thread(fData->controlThread) != B_OK)
-		throw std::runtime_error("Cannot resume control thread");
-		
-	fData->dataThread = spawn_thread(DataThreadFunc, "http:data", B_NORMAL_PRIORITY, fData.get());
-	if (fData->dataThread < 0)
-		throw std::runtime_error("Cannot create data thread");
-	if (resume_thread(fData->dataThread) != B_OK)
-		throw std::runtime_error("Cannot resume data thread");
 }
 
 
