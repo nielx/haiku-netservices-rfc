@@ -46,6 +46,7 @@ struct BHttpSession::Data {
 	sem_id								dataQueueSem;
 	// locking mechanism
 	BLocker								lock;
+	int32								quitting = 0;
 	// queues
 	std::deque<BHttpSession::Wrapper>	controlQueue;
 	std::deque<BHttpSession::Wrapper>	dataQueue;
@@ -76,6 +77,16 @@ struct BHttpSession::Data {
 			throw std::runtime_error("Cannot create data thread");
 		if (resume_thread(dataThread) != B_OK)
 			throw std::runtime_error("Cannot resume data thread");
+	}
+
+	// Destructor
+	~Data() {
+		atomic_set(&quitting, 1);
+		delete_sem(controlQueueSem);
+		delete_sem(dataQueueSem);
+		status_t threadResult;
+		wait_for_thread(controlThread, &threadResult);
+		wait_for_thread(dataThread, &threadResult);
 	}
 };
 
@@ -189,7 +200,7 @@ BHttpSession::ControlThreadFunc(void* arg)
 		// Process items on the queue
 		while (true) {
 			data->lock.Lock();
-			if (data->controlQueue.empty()){
+			if (data->controlQueue.empty() || atomic_get(&data->quitting) == 1) {
 				data->lock.Unlock();
 				break;
 			}
@@ -231,6 +242,23 @@ BHttpSession::ControlThreadFunc(void* arg)
 			}
 		}
 	}
+
+	 // Clean up and make sure we are quitting
+	 if (atomic_get(&data->quitting) == 1) {
+	 	std::cout << "controlThread is ending, so cleaning up all requests" << std::endl;
+	 	// Cancel all requests
+	 	for (auto& request: data->dataQueue) {
+	 		request.result->SetError(BError(B_CANCELED, "Request Canceled because BHttpSession was closed"));
+			if (request.observer.IsValid()) {
+				BMessage msg(UrlEvent::RequestCompleted);
+				msg.AddInt32(UrlEventData::Id, request.result->id);
+				msg.AddBool(UrlEventData::Success, false);
+				request.observer.SendMessage(&msg);
+			}
+	 	}
+	 } else {
+	 	throw std::runtime_error("Unknown reason that the controlQueueSem is deleted");
+	 }
 	return B_OK;
 }
 
@@ -408,6 +436,23 @@ BHttpSession::DataThreadFunc(void* arg)
 			i++;
 		}
 	}
+	// Clean up and make sure we are quitting
+	if (atomic_get(&data->quitting) == 1) {
+		std::cout << "dataThread is ending, so cleaning up all requests" << std::endl;
+		// Cancel all requests
+		for (auto it = data->connectionMap.begin(); it != data->connectionMap.end(); it++) {
+			it->second.result->SetError(BError(B_CANCELED, "Request Canceled because BHttpSession was closed"));
+			if (it->second.observer.IsValid()) {
+				BMessage msg(UrlEvent::RequestCompleted);
+				msg.AddInt32(UrlEventData::Id, it->second.result->id);
+				msg.AddBool(UrlEventData::Success, false);
+				it->second.observer.SendMessage(&msg);
+			}
+	 	}
+	} else {
+		throw std::runtime_error("Unknown reason that the dataQueueSem is deleted");
+	}
+
 	return B_OK;
 }
 
