@@ -7,10 +7,9 @@
 #define _B_HTTP_RESULT_H_
 
 
-#include <functional>
+#include <memory>
+#include <string>
 
-#include <ErrorsExt.h>
-#include <Expected.h>
 #include <SupportDefs.h>
 
 
@@ -37,14 +36,10 @@ struct BHttpBody {
 
 class BHttpResult {
 public:
-	typedef std::reference_wrapper<BHttpStatus> StatusRef;
-	typedef std::reference_wrapper<BHttpHeaders> HeadersRef;
-	typedef std::reference_wrapper<BHttpBody> BodyRef;
-
 	// Blocking Access Functions
-	Expected<StatusRef, BError>		Status();
-	Expected<HeadersRef, BError>	Headers();
-	Expected<BodyRef, BError>		Body();
+	BHttpStatus&					Status();
+	BHttpHeaders&					Headers();
+	BHttpBody&						Body();
 
 	// Check if data is available yet
 	bool							HasStatus();

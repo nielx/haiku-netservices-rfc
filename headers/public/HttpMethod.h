@@ -6,8 +6,8 @@
 #define _B_HTTP_METHOD_H_
 
 
-#include <ErrorsExt.h>
-#include <Expected.h>
+#include <string>
+#include <string_view>
 
 
 namespace BPrivate {
@@ -28,24 +28,24 @@ public:
 	static	BHttpMethod			Trace();
 	static	BHttpMethod			Connect();
 
-	// Custom methods
-	static	Expected<BHttpMethod, BError>
-								Make(std::string method);
-
+	// Exception
+	struct invalid_method_exception {
+		enum {Empty, InvalidCharacter} reason;
+	};
 
 	// Constructors and assignment
+								BHttpMethod(std::string method);
 								BHttpMethod(const BHttpMethod& other) = default;
 								BHttpMethod(BHttpMethod&& other) = default;
 			BHttpMethod&		operator=(const BHttpMethod& other) = default;
 			BHttpMethod&		operator=(BHttpMethod&& other) = default;
 
 	// Comparison
-			bool				operator==(const BHttpMethod& other) const;
+			bool				operator==(const BHttpMethod& other) const noexcept;
 
 	// String representation
 	const	std::string&		Method() const { return fMethod; }
 private:
-								BHttpMethod(std::string method);
 			std::string			fMethod;
 };
 

@@ -5,6 +5,8 @@
 #ifndef _NET_SERVICES_H_
 #define _NET_SERVICES_H_
 
+#include <String.h>
+
 
 namespace BPrivate {
 
@@ -34,6 +36,24 @@ namespace UrlEventData {
 	extern const char* DebugType;
 	extern const char* DebugMessage;
 }
+
+
+// Standard Exceptions
+struct unsupported_protocol_exception {
+	BUrl 	url;
+};
+
+
+struct invalid_url_exception {
+	BUrl	url;
+};
+
+
+struct url_request_exception {
+	enum { HostnameError, NetworkError, ProtocolError, SystemError, Canceled } error_type;
+	status_t system_error;
+	BString error_message;
+};
 
 
 // Private helper to generate a unique identifier for a request

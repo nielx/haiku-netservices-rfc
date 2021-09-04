@@ -22,7 +22,7 @@ namespace Network {
 BHttpResult::BHttpResult(std::shared_ptr<HttpResultPrivate> data)
 	: fData(data)
 {
-	
+
 }
 
 
@@ -33,7 +33,7 @@ BHttpResult::~BHttpResult()
 }
 
 
-Expected<BHttpResult::StatusRef, BError>
+BHttpStatus&
 BHttpResult::Status()
 {
 	if (!fData)
@@ -42,18 +42,18 @@ BHttpResult::Status()
 	while (status == B_INTERRUPTED || status == B_OK) {
 		auto dataStatus = fData->GetStatusAtomic();
 		if (dataStatus == HttpResultPrivate::kError)
-			return Unexpected<BError>(*(fData->error));
+			std::rethrow_exception(*(fData->error));
 
 		if (dataStatus >= HttpResultPrivate::kStatusReady)
-			return std::ref(*(fData->status));
-		
+			return *(fData->status);
+
 		status = acquire_sem(fData->data_wait);
 	}
 	throw std::runtime_error("Unexpected error waiting for status!");
 }
 
 
-Expected<BHttpResult::HeadersRef, BError>
+BHttpHeaders&
 BHttpResult::Headers()
 {
 	if (!fData)
@@ -62,10 +62,10 @@ BHttpResult::Headers()
 	while (status == B_INTERRUPTED || status == B_OK) {
 		auto dataStatus = fData->GetStatusAtomic();
 		if (dataStatus == HttpResultPrivate::kError)
-			return Unexpected<BError>(*(fData->error));
+			std::rethrow_exception(*(fData->error));
 
 		if (dataStatus >= HttpResultPrivate::kHeadersReady)
-			return std::ref(*(fData->headers));
+			return *(fData->headers);
 		
 		status = acquire_sem(fData->data_wait);
 	}
@@ -73,7 +73,7 @@ BHttpResult::Headers()
 }
 
 
-Expected<BHttpResult::BodyRef, BError>
+BHttpBody&
 BHttpResult::Body()
 {
 	if (!fData)
@@ -82,10 +82,10 @@ BHttpResult::Body()
 	while (status == B_INTERRUPTED || status == B_OK) {
 		auto dataStatus = fData->GetStatusAtomic();
 		if (dataStatus == HttpResultPrivate::kError)
-			return Unexpected<BError>(*(fData->error));
+			std::rethrow_exception(*(fData->error));
 
 		if (dataStatus >= HttpResultPrivate::kBodyReady)
-			return std::ref(*(fData->body));
+			return *(fData->body);
 		
 		status = acquire_sem(fData->data_wait);
 	}

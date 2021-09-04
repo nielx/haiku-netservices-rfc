@@ -14,28 +14,37 @@
 #include <HttpForm.h>
 #include <HttpHeaders.h>
 #include <HttpRequest.h>
+#include <NetServices.h>
 #include <ProxySecureSocket.h>
 #include <Socket.h>
 #include <SecureSocket.h>
 
 
-using BPrivate::BError;
 using namespace BPrivate::Network;
 
 
-BHttpRequest::BHttpRequest(const BUrl& url, bool ssl, const BHttpMethod method)
-	: fUrl(url),
-	fSSL(ssl),
-	fRequestMethod(method),
+BHttpRequest::BHttpRequest(BUrl url, BHttpMethod method)
+	: fUrl(std::move(url)),
+	fRequestMethod(std::move(method)),
 	fHttpVersion(B_HTTP_11),
-	fOptHeaders(NULL),
-	fOptPostFields(NULL),
-	fOptInputData(NULL),
+	fOptHeaders(nullptr),
+	fOptPostFields(nullptr),
+	fOptInputData(nullptr),
 	fOptInputDataSize(-1),
 	fOptRangeStart(-1),
 	fOptRangeEnd(-1),
 	fOptFollowLocation(true)
 {
+	if (!fUrl.IsValid())
+		throw invalid_url_exception{std::move(fUrl)};
+
+	if (fUrl.Protocol() == "http")
+		fSSL = false;
+	else if (fUrl.Protocol() == "https")
+		fSSL = true;
+	else
+		throw unsupported_protocol_exception{std::move(fUrl)};
+
 	_ResetOptions();
 }
 
@@ -43,20 +52,6 @@ BHttpRequest::BHttpRequest(const BUrl& url, bool ssl, const BHttpMethod method)
 BHttpRequest::~BHttpRequest()
 {
 
-}
-
-
-/*static*/ Expected<BHttpRequest, BError>
-BHttpRequest::Get(const BUrl& url)
-{
-	if (!url.IsValid())
-		return Unexpected<BError>(BError(B_BAD_VALUE, "Invalid URL"));
-
-	if (url.Protocol() == "http")
-		return BHttpRequest(url, false, BHttpMethod::Get());
-	else if (url.Protocol() == "https")
-		return BHttpRequest(url, true, BHttpMethod::Get());
-	return Unexpected<BError>(BError(B_BAD_VALUE, "Unsupported protocol"));
 }
 
 

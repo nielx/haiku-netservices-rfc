@@ -6,8 +6,6 @@
 #define _B_URL_PROTOCOL_HTTP_H_
 
 #include <Certificate.h>
-#include <Expected.h>
-#include <ErrorsExt.h>
 #include <HttpHeaders.h>
 #include <HttpMethod.h>
 #include <Url.h>
@@ -25,8 +23,7 @@ class BHttpForm;
 class BHttpRequest {
 public:
 	// Constructors
-	static	Expected<BHttpRequest, BError>	Get(const BUrl &url);
-
+								BHttpRequest(BUrl url, BHttpMethod method);
 	virtual						~BHttpRequest();
 
 	static	bool				IsInformationalStatusCode(int16 code);

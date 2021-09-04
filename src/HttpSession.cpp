@@ -216,8 +216,8 @@ BHttpSession::ControlThreadFunc(void* arg)
 					try {
 						_ResolveHostName(request);
 						_OpenConnection(request);
-					} catch (BError &e) {
-						request.result->SetError(e);
+					} catch (...) {
+						request.result->SetError(std::current_exception());
 						hasError = true;
 					}
 
@@ -248,7 +248,11 @@ BHttpSession::ControlThreadFunc(void* arg)
 	 	std::cout << "controlThread is ending, so cleaning up all requests" << std::endl;
 	 	// Cancel all requests
 	 	for (auto& request: data->dataQueue) {
-	 		request.result->SetError(BError(B_CANCELED, "Request Canceled because BHttpSession was closed"));
+	 		try {
+	 			throw url_request_exception{url_request_exception::Canceled, B_OK, "Request Canceled because BHttpSession was closed"};
+	 		} catch (...) {
+	 			request.result->SetError(std::current_exception());
+	 		}
 			if (request.observer.IsValid()) {
 				BMessage msg(UrlEvent::RequestCompleted);
 				msg.AddInt32(UrlEventData::Id, request.result->id);
@@ -366,8 +370,8 @@ BHttpSession::DataThreadFunc(void* arg)
 					if (finished)
 						request.result->SetBody();
 					success = true;
-				} catch (BError &e) {
-					request.result->SetError(e);
+				} catch (...) {
+					request.result->SetError(std::current_exception());
 					finished = true;
 				}
 
@@ -391,7 +395,11 @@ BHttpSession::DataThreadFunc(void* arg)
 			} else if ((item.events & B_EVENT_DISCONNECTED) == B_EVENT_DISCONNECTED) {
 				std::cout << "Unexpected disconnect for " << item.object << std::endl;
 				auto& request = data->connectionMap.find(item.object)->second;
-				request.result->SetError(BError(B_IO_ERROR, "Connection was closed unexpectedly"));
+				try {
+					throw url_request_exception{url_request_exception::NetworkError, B_IO_ERROR, "Connection was closed unexpectedly"};
+				} catch (...) {
+					request.result->SetError(std::current_exception());
+				}
 				if (request.observer.IsValid()) {
 					BMessage msg(UrlEvent::RequestCompleted);
 					msg.AddInt32(UrlEventData::Id, request.result->id);
@@ -404,7 +412,11 @@ BHttpSession::DataThreadFunc(void* arg)
 				std::cout << "Cancel request for " << item.object << std::endl;
 				auto& request = data->connectionMap.find(item.object)->second;
 				request.socket->Disconnect();
-				request.result->SetError(BError(B_CANCELED, "Request cancelled by user"));
+				try {
+					throw url_request_exception{url_request_exception::Canceled, B_CANCELED, "Request cancelled by user"};
+				} catch (...) {
+					request.result->SetError(std::current_exception());
+				}
 				if (request.observer.IsValid()) {
 					BMessage msg(UrlEvent::RequestCompleted);
 					msg.AddInt32(UrlEventData::Id, request.result->id);
@@ -441,7 +453,11 @@ BHttpSession::DataThreadFunc(void* arg)
 		std::cout << "dataThread is ending, so cleaning up all requests" << std::endl;
 		// Cancel all requests
 		for (auto it = data->connectionMap.begin(); it != data->connectionMap.end(); it++) {
-			it->second.result->SetError(BError(B_CANCELED, "Request Canceled because BHttpSession was closed"));
+			try {
+				throw url_request_exception{url_request_exception::Canceled, B_CANCELED, "Request Canceled because BHttpSession was closed"};
+			} catch (...) {
+				it->second.result->SetError(std::current_exception());
+			}
 			if (it->second.observer.IsValid()) {
 				BMessage msg(UrlEvent::RequestCompleted);
 				msg.AddInt32(UrlEventData::Id, it->second.result->id);
@@ -468,7 +484,7 @@ BHttpSession::_ResolveHostName(Wrapper& request)
 	// TODO: proxy
 	request.remoteAddress.SetTo(request.request.fUrl.Host(), port);
 	if (auto status = request.remoteAddress.InitCheck(); status != B_OK)
-		throw BError(B_SERVER_NOT_FOUND, "Cannot resolve hostname");
+		throw url_request_exception{url_request_exception::HostnameError, status, "Cannot resolve hostname"};
 }
 
 
@@ -487,7 +503,7 @@ BHttpSession::_OpenConnection(Wrapper& request)
 	// Open connection
 	if (auto status = socket->Connect(request.remoteAddress); status != B_OK) {
 		// TODO: inform listeners that the connection failed
-		throw BError(status, "Cannot connect to host");
+		throw url_request_exception{url_request_exception::NetworkError, status, "Cannot connect to host"};
 	}
 
 	// Make the rest of the interaction non-blocking
@@ -600,7 +616,7 @@ BHttpSession::_RequestRead(Wrapper& request)
 	// indicate that all the reading and processing is completed.
 
 	// First check if we are going to download data
-	size_t bytesRead = 0;
+	ssize_t bytesRead = 0;
 	if ((!request.receiveEnd) && (request.inputBuffer.Size() == request.previousBufferSize)) {
 		std::array<char, kHttpBufferSize> chunk;
 		bytesRead = request.socket->Read(chunk.data(), kHttpBufferSize);
@@ -611,7 +627,7 @@ BHttpSession::_RequestRead(Wrapper& request)
 		std::cout << "_RequestRead bytesRead: " << bytesRead << std::endl;
 
 		if (bytesRead < 0) {
-			throw BError(bytesRead, "Error reading data from host");
+			throw url_request_exception{url_request_exception::NetworkError, bytesRead, "Error reading data from host"};
 		} else if (bytesRead == 0) {
 			// Check if we got the expected number of bytes.
 			// Exceptions:
@@ -620,7 +636,7 @@ BHttpSession::_RequestRead(Wrapper& request)
 			// - If the request method is "HEAD" which explicitly asks the
 			//   server to not send any data (only the headers)
 			if (request.bytesTotal > 0 && request.bytesReceived != request.bytesTotal) {
-				throw BError(B_IO_ERROR, "Error reading data from host: unexpected end of data");
+				throw url_request_exception{url_request_exception::ProtocolError, B_OK, "Unexpected end of data"};
 			}
 			request.receiveEnd = true;
 		}
@@ -682,7 +698,7 @@ BHttpSession::_RequestRead(Wrapper& request)
 						.CreateDecompressingOutputStream(&request.decompressorStorage,
 							NULL, stream);
 					if (result != B_OK) {
-						throw BError(result, "Could not create decompression stream");
+						throw url_request_exception{url_request_exception::SystemError, result, "Could not create decompression stream"};
 					}
 					request.decompressingStream = std::unique_ptr<BDataIO>(stream);
 				}
@@ -733,9 +749,9 @@ BHttpSession::_RequestRead(Wrapper& request)
 			if (request.decompress) {
 				auto status = request.decompressingStream->WriteExactly(
 					request.inputTempBuffer.data(), bytesRead);
-				if (status != B_OK) {
-					throw BError(status, "Error decompressing data");
-				}
+				if (status != B_OK)
+					throw url_request_exception{url_request_exception::SystemError, status, "Error decompressing data"};
+
 				ssize_t size = request.decompressorStorage.Size();
 				BStackOrHeapArray<char, 4096> buffer(size);
 				size = request.decompressorStorage.Read(buffer, size);
@@ -759,7 +775,7 @@ BHttpSession::_RequestRead(Wrapper& request)
 				auto status = request.decompressingStream->Flush();
 
 				if (status != B_OK && status != B_BUFFER_OVERFLOW) {
-					throw BError(status, "Error flushing decompression stream");
+					throw url_request_exception{url_request_exception::SystemError, status, "Error flushing decompression stream"};
 				}
 
 				ssize_t size = request.decompressorStorage.Size();
@@ -783,7 +799,7 @@ BHttpSession::_RequestRead(Wrapper& request)
 
 
 // Helper to extract a single line from a BNetBuffer
-static Expected<std::string, status_t>
+std::optional<std::string>
 GetLine(BNetBuffer& buffer)
 {
 	size_t characterIndex = 0;
@@ -792,7 +808,7 @@ GetLine(BNetBuffer& buffer)
 		characterIndex++;
 
 	if (characterIndex == buffer.Size()) {
-		return Unexpected<status_t>(B_ERROR);
+		return std::nullopt;
 	}
 
 	// FUTURE: BNetBuffer requires an extra copy. It should be possible
@@ -801,7 +817,7 @@ GetLine(BNetBuffer& buffer)
 	// copy or some evil casting.
 	BStackOrHeapArray<char, 4096> tempData(characterIndex + 1);
 	if (!tempData.IsValid())
-		return Unexpected<status_t>(B_NO_MEMORY);
+		std::nullopt;
 
 	buffer.RemoveData(tempData, characterIndex + 1);
 

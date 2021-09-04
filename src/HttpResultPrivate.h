@@ -37,7 +37,7 @@ struct HttpResultPrivate {
 			std::optional<BHttpStatus>	status;
 			std::optional<BHttpHeaders>	headers;
 			std::optional<BHttpBody>	body;
-			std::optional<BError>		error;
+			std::optional<std::exception_ptr>	error;
 
 	// Body storage
 			std::unique_ptr<BDataIO>	owned_body = nullptr;
@@ -49,7 +49,7 @@ struct HttpResultPrivate {
 			int32						GetStatusAtomic();
 			bool						CanCancel();
 			void						SetCancel();
-			void						SetError(const BError& e);
+			void						SetError(std::exception_ptr e);
 			void						SetStatus(BHttpStatus&& s);
 			void						SetHeaders(BHttpHeaders&& h);
 			void						SetBody();
@@ -90,7 +90,7 @@ HttpResultPrivate::SetCancel()
 
 
 inline void
-HttpResultPrivate::SetError(const BError& e)
+HttpResultPrivate::SetError(std::exception_ptr e)
 {
 	error = e;
 	atomic_set(&requestStatus, kError);
