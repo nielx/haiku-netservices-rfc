@@ -35,13 +35,20 @@ The new library instead focuses on standardization of behavior and conventions, 
 
 All protocols supported by the Haiku Network Service Kit support a uniform asynchronous event message interface, that can inform BLooper/BHandlers about the progress of the request. This allows, for example, a window to schedule a request, and then continue its normal event loop while it waits for the final data to become available. Section B.6 shows the types of messages, and their contents.
 
-### A.3 Errors and Error Handling using `Expected<T, E>` on x86 and x86_64 (C++17)
+### A.3 Errors and Error Handling using exceptions
 
-The proposed API takes the approach that when an object is created, it should be in a valid state. The traditional Haiku API has several classes where one create an object, but is then obliged to use an `InitCheck()` method to make sure that the object is actually in a valid state. The proposed API ditches that pattern on modern compilers, by using static factory class methods to construct new objects. The result of calling those methods is either a valid object, or an error. In order to accommodate that pattern, the `Expected<T, E>` helper type is provided. This class either holds a valid object of type `T`,  or an error of type `E`. The type itself is modeled after the `std::expected<T, E>` proposal that is not yet part of the formal standard (it did not make C++20). See the links at the bottom of this document for more information.
+The API proposal uses exceptions for error handling. The exceptions are implemented using the following principles:
 
-The experimental API introduces the `BError` type, which enriches the standard `status_t` error code with a string error message for further information.
-
-> For now, it is proposed that the GCC2 variant of these libraries will continue with the pattern of providing objects that may be in an invalid state. The InitCheck() for those methods will be made available.
+* The consumer of the API must assume that all methods and functions of this API can potentially throw an exception, including constructors, except for when they are explicitly marked as `noexcept`.
+* All exceptions are implemented as classes. This means that `status_t` and other fundamentals will never be used as an exception base.
+* In the API design, the principles of discoverability and utility are followed to determine the error system:
+  * Discoverability means that it should be reasonably clear from the code and documentation which exceptions are thrown and under what circumstances.
+  * Utility means that the exceptions themselves are useful for the user of the API to act on, both for simple use cases (something went wrong, so I need to recover from that) to more complex use cases where one may need to know the reason of the exception so that the program can act on that (or require the user to act on it). 
+* In order to support that, there are three levels of exceptions defined;
+  * The **local exceptions** are exceptions that will only be thrown by objects of a specific type. The example in this kit is the `BHttpMethod::invalid_method_exception` which will never be used outside of a `BHttpMethod` object.
+  * **Kit exceptions** are exception types that can be thrown by multiple classes and methods in a single kit. Examples in this kit are the `unsupported_protocol_exception` and the `invalid_url_exception` (both can be found in `NetServices.h`).
+  * **System exceptions** are a <u>limited</u> list of errors that can be thrown throughout the API, commonly when there are resource constraints around memory or other system resources. Currently the only accepted exception is the `std::bad_alloc` exception that is raised when an allocation fails.
+* The public API will be implemented in such a way that these rules are followed.
 
 ### A.4 Use of modern C++ (C++17)
 
@@ -50,9 +57,8 @@ The Network Services Kit API proposal makes the conscious choice to start implem
 * Move semantics will be used where possible, reducing the number of objects created using `new` and reducing the risk of memory leaks.
 * All publicly classes will have explicit implementations of copy/move constructors and assignment (rule of 5).
 * Smart pointers such as `std::unique_ptr` and `std::shared_ptr` are used, even in public interfaces and preferred over existing homegrown helpers like `BReferencable`. 
-* Containers from the ISO C++ standard, like `std::vector` will be used, over homegrown implementations.
 
-Because the API will have to be made available to GCC2-based applications as well, the implementation will need to have implement an alternative public API for older compilers. For now, the choice is to have feature parity for the HTTP protocol (because of its use in the package kit and HaikuDepot) and for the general URL download API (see part C) that supports HTTP. Implementation of other protocols for GCC2 will be decided on a per-protocol basis. Additionally, because in the modern implementation has a reliance on move semantics, a choice will have to be made on whether or not the GCC2 implementation will do local objects (which will cause additional copying in cases) or heap allocations. The choice will have to be made on a case by case basis, but memory usage optimization is not the primary focus.
+The result is that the library and its functions will *only* be available on *modern platforms* and **not x86_gcc2**.
 
 > Haiku comes with GCC 8.3.0. This defaults to C++14 support. In order to use C++17, pass the -std=c++17 parameter.
 
@@ -93,28 +99,17 @@ session.AddCookie(std::move(cookie));
 In order to set up a HTTP request, you create a `BHttpRequest` object. 
 
 ```c++
-//  x86 and x86_64 with C++17 support
 auto url = BUrl("https://www.haiku-os.org");
-auto request = BHttpRequest::Get(url);
-if (!request) {
-    std::cout << "Error creating http request: " << request.error().Error() << std::endl;
-	return;
+	// BUrl is part of the legacy support kit, and does not use exceptions
+try {
+	auto request = BHttpRequest(url, BHttpMethod::Get());
+	// ...
+} catch (...) {
+    // error handling
 }
 ```
 
-On legacy systems, the process is similar:
-
-```c++
-// legacy systems
-BUrl url("https://www.haiku-os.org");
-BHttpRequest request = BHttpRequest::Get(url);
-if (request.InitCheck() != B_OK) {
-    std::cout << "Error creating http request: " <<  request.InitCheck() << std::endl;
-    return;
-}
-```
-
-> Note that on modern compilers, the `Expected<>` construct is used to either give you a valid `BHttpRequest`,  or a `BError`  object describing the error. The legacy systems use the traditional Be API construct of returning an object that is in an (internally) invalid state.
+> Note that in the example above, wrapping this particular use of the API in a try block could be skipped, as we  know that the URL is valid (so `invalid_url_exception` will not be thrown and we know the protocol is supported `unsupported_protocol_exception`). While `std::bad_alloc` might be raised in low memory situations, it is arguably a choice whether the application developer really wants to put in the effort to recover in those particular conditions.
 
 ### B.3 Setting up the HTTP Request
 
@@ -142,19 +137,6 @@ class BHttpSession {
 };
 ```
 
-On legacy systems, the API is similar. The memory management here is similar (see section B.8 for more).
-
-```c++
-// legacy systems
-class BHttpSession {
-    // ...
-    BHttpResult AddRequest(BHttpRequest request, BDataIO* target = NULL,
-                         BMessenger observer = BMessenger());
-    BHttpResult AddRequest(BHttpRequest request, BReference<BMemoryRingIO>,
-                         BMessenger observer = BMessenger());
-};
-```
-
 ### B.5 Synchronously Waiting for the HTTP response
 
 Once a request has been added to a session, you will receive a `BHttpResult` handle. This object allows you to receive the parts HTTP response once they become available. The response is split up in three parts that can be accessed as they come available during the request in the following order:
@@ -166,18 +148,19 @@ Once a request has been added to a session, you will receive a `BHttpResult` han
 Each of these calls will only return once the data is available, or when the request has ended because of an error. Note that for the error, it does not matter which part of the request has failed. That means that you can call `BHttpRequest::Body()` and you will still receive an error object when the request has failed.
 
 ```c++
-// x86 and x86_64 with C++17 support
 auto url = BUrl("http://obviouslyinvalidhost.invalid/");
-auto request = HttpRequest::Get(url);
-if (!request) {
-    // error handling, but this will succeed because the url is of the right protocol
+try {
+	auto request = BHttpRequest(url, BHttpMethod::Get());
+	auto result = session.AddRequest(std::move(request));
+    auto& body_text = result.Body().text;
+    
+} catch (const invalid_url_exception&) {
+    // should never be called as the URL is valid
+} catch (const unsupported_protocol_exception&) {
+    // should never be called as the protocol is supported
+} catch (const url_request_exception& e) {
+    // will be called, because the hostname will not be able to be resolved
     ...
-}
-auto result = session.AddRequest(std::move(request));
-if (auto body = result.Body(); body) {
-    // if the URL would be valid, you could process the body here
-} else {
-    // this will be called, because the body will be the error state of the Expected<>
 }
 ```
 
@@ -236,11 +219,12 @@ MyWindow::MessageReceived(BMessage *msg)
                 if (fResult.Identifier() == identifier) {
                     // The following call will not block, because we have been notified
                     // that the request is done.
-                    auto body = fResult.Body();
-                    if (body)
-                        _DisplayHttpResult(body.value());
-                   	else
-                        _DisplayError(body.error());
+                    try {
+                        _DisplayHttpResult(fResult.Body());
+                    } catch (const url_request_exception& e) {
+                        _DisplayError(e);
+                    }
+                }
             }
             return;
         }
@@ -291,16 +275,9 @@ The prototype of the static factory function looks like this:
 // x86 and x86_64 with C++17 support
 class BUrlDownload {
 public:
-    static Expected<BUrlDownload, BError>	Download(const BUrl& url,
-                                             std::unique_ptr<BDataIO> target = nullptr,
-                                             BMessenger observer = BMessenger());
-}
-
-// legacy systems
-class BUrlDownload {
-public:
-    static BUrlDownload	Download(const BUrl& url, BDataIO* target = NULL,
-                             BMessenger observer = BMessenger());
+    static BUrlDownload	Download(const BUrl& url,
+                                 std::unique_ptr<BDataIO> target = nullptr,
+                                 BMessenger observer = BMessenger());
 }
 ```
 
@@ -309,33 +286,12 @@ This can then be used as follows:
 ```c++
 // x86 and x86_64 with C++17 support
 auto url = BUrl("https://www.haiku-os.org");
-auto download = BUrlDownload::Download(url);
-if (!download) {
-    std::cout << "Error creating download: " << download.error().Error() << std::endl;
-	return;
-}
-if (auto body = download.Body(); body) {
+try {
+	auto download = BUrlDownload::Download(url);
+	auto body = download.Body();
     // if the download was succesful, the resulting body can be used here
-} else {
-    // this will be called, because the body will be the error state of the Expected<>
-}
-```
-
-On legacy systems, the syntax is as follows:
-
-```c++
-// legacy systems
-BUrl url("https://www.haiku-os.org");
-BUrlDownload download = BUrlDownload::Download(url);
-if (download.InitCheck() != B_OK) {
-    std::cout << "Error creating download: " <<  download.InitCheck() << std::endl;
-    return;
-}
-BUrlBody* body = download.Body();
-if (body) {
-    // if the download was succesful, the resulting body can be used here
-} else {
-    std::cout << "Error downloading url: " << download.ErrorText() << std::endl;
+} catch (...) {
+    // handle errors
 }
 ```
 
@@ -366,14 +322,6 @@ The `BUrlDownload::Download()` factory function takes an `observer` parameter. T
 While the `BUrlDownload` interface is designed to be abstract, it does expose which `B*Session` objects it supports, and allows you to make a copy of the session objects. This will allow you then to add data to them, that will apply to the `BUrlDownload` requests. For example, you might want to add authentication information to `BFtpSession` or add additional valid certificates to `BHttpSession`.
 
 # Other Notes
-
-On expected:
-
-* [P0323R10: std::expected (open-std.org)](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0323r10.html)
-* [TartanLlama/expected: C++11/14/17 std::expected with functional-style extensions (github.com)](https://github.com/TartanLlama/expected)
-* [CppCon 2018: Andrei Alexandrescu "Expect the expected" (YouTube)](https://youtu.be/PH4WBuE1BHI)
-* [Introduction to proposed std::expected - Niall Douglas - Meeting C++ 2017](https://youtu.be/JfMBLx7qE0I)
-* [std-make/include/experimental/fundamental/v3/expected2 at master · viboes/std-make (github.com)](https://github.com/viboes/std-make/tree/master/include/experimental/fundamental/v3/expected2)
 
 Other work:
 
